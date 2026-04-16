@@ -1,0 +1,53 @@
+# Build output
+bin/
+obj/
+out/
+
+# .NET
+*.user
+*.suo
+.vs/
+.vscode/
+.idea/
+
+# Rider
+*.sln.iml
+.idea/
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Publish
+publish/
+**/publish/
+
+# Entity Framework migrations (keep the files, but not the snapshots temp)
+# We DO want to track Migrations/
+
+# Logs
+*.log
+logs/
+
+# User secrets
+**/secrets.json
+appsettings.*.json
+!appsettings.Development.json
+
+# Docker
+.dockerignore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test results
+TestResults/
+coverage/
+*.trx
+*.coveragexml

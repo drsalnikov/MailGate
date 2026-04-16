@@ -1,0 +1,45 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: mailgate-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: mailgate
+      RABBITMQ_DEFAULT_PASS: mailgate
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: mailgate-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: mailgate
+      POSTGRES_USER: mailgate
+      POSTGRES_PASSWORD: mailgate
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mailgate"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mailhog:
+    image: mailhog/mailhog
+    container_name: mailgate-mailhog
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+volumes:
+  rabbitmq_data:
+  postgres_data:
