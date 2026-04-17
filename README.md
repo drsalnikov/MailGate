@@ -40,7 +40,9 @@
 MailGate/
 ├── src/
 │   ├── MailGate.Api/             # REST endpoint, валидация, публикация в RMQ
+│   │   └── Dockerfile
 │   ├── MailGate.Worker/          # MassTransit Consumer, ChannelRouter
+│   │   └── Dockerfile
 │   ├── MailGate.Core/            # Доменные модели, интерфейсы
 │   ├── MailGate.Channels.Smtp/   # SMTP/Exchange провайдер (MailKit + OAuth2)
 │   └── MailGate.Infrastructure/  # MassTransit, EF Core, PostgreSQL
@@ -48,7 +50,8 @@ MailGate/
 │   ├── MailGate.Api.Tests/
 │   ├── MailGate.Worker.Tests/
 │   └── MailGate.Channels.Smtp.Tests/
-├── docker-compose.yml            # RabbitMQ + PostgreSQL + MailHog
+├── docker-compose.yml            # Полный стек: API + Worker + RabbitMQ + PostgreSQL + MailHog
+├── .dockerignore
 └── MailGate.sln
 ```
 
@@ -58,46 +61,31 @@ MailGate/
 
 ### Требования
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/download)
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/)
 
-### 1. Поднять инфраструктуру
+### 1. Запустить весь стек
 
 ```bash
-docker compose up -d
+docker compose up --build
 ```
 
-Запускает:
-- **RabbitMQ** — `amqp://localhost:5672`, Management UI: http://localhost:15672 (`mailgate` / `mailgate`)
-- **PostgreSQL** — `localhost:5432`, БД `mailgate`
-- **MailHog** — SMTP сервер для разработки на `localhost:1025`, UI: http://localhost:8025
+Собирает образы и запускает все сервисы:
 
-### 2. Применить миграции БД
+| Сервис | URL | Описание |
+|--------|-----|----------|
+| **API** | http://localhost:8080 | REST API |
+| **Swagger UI** | http://localhost:8080/swagger | Интерактивная документация |
+| **Scalar UI** | http://localhost:8080/scalar/v1 | Альтернативный API Reference |
+| **RabbitMQ UI** | http://localhost:15672 | Менеджмент (`mailgate` / `mailgate`) |
+| **MailHog** | http://localhost:8025 | Перехватчик исходящей почты |
+| **PostgreSQL** | `localhost:5432` | БД `mailgate` |
 
-```bash
-dotnet ef database update \
-  --project src/MailGate.Infrastructure \
-  --startup-project src/MailGate.Worker
-```
+> Миграции БД применяются автоматически при старте Worker.
 
-### 3. Запустить Worker
-
-```bash
-dotnet run --project src/MailGate.Worker
-```
-
-### 4. Запустить API
+### 2. Отправить тестовое уведомление
 
 ```bash
-dotnet run --project src/MailGate.Api --urls "http://localhost:5100"
-```
-
-Scalar API Reference: http://localhost:5100/scalar/v1
-
-### 5. Отправить тестовое уведомление
-
-```bash
-curl -X POST http://localhost:5100/api/notifications \
+curl -X POST http://localhost:8080/api/notifications \
   -H "Content-Type: application/json" \
   -H "X-Idempotency-Key: test-001" \
   -d '{
@@ -111,6 +99,31 @@ curl -X POST http://localhost:5100/api/notifications \
 ```
 
 Письмо появится в MailHog UI: http://localhost:8025
+
+---
+
+### Локальная разработка (без Docker для сервисов)
+
+Если нужно запустить API или Worker напрямую через `dotnet run`, сначала подними только инфраструктуру:
+
+```bash
+docker compose up -d rabbitmq postgres mailhog
+```
+
+Затем:
+
+```bash
+# Применить миграции
+dotnet ef database update \
+  --project src/MailGate.Infrastructure \
+  --startup-project src/MailGate.Worker
+
+# Worker
+dotnet run --project src/MailGate.Worker
+
+# API
+dotnet run --project src/MailGate.Api --urls "http://localhost:5100"
+```
 
 ---
 
@@ -289,7 +302,8 @@ API                  RabbitMQ              Worker
 | OAuth2 (Exchange) | Microsoft.Identity.Client (MSAL) |
 | ORM | EF Core 10 + Npgsql (PostgreSQL) |
 | Валидация | FluentValidation 11 |
-| OpenAPI UI | Scalar |
+| OpenAPI UI | Scalar + Swagger UI (Swashbuckle) |
+| Контейнеризация | Docker / Docker Compose |
 | Тесты | xUnit + NSubstitute + Testcontainers |
 | SMTP dev-сервер | MailHog |
 

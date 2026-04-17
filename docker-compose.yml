@@ -40,6 +40,55 @@ services:
       - "1025:1025"
       - "8025:8025"
 
+  api:
+    build:
+      context: .
+      dockerfile: src/MailGate.Api/Dockerfile
+    container_name: mailgate-api
+    ports:
+      - "8080:8080"
+      - "8443:8443"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_HTTP_PORTS: "8080"
+      ASPNETCORE_HTTPS_PORTS: "8443"
+      ASPNETCORE_Kestrel__Certificates__Default__Path: /https/mailgate.pfx
+      ASPNETCORE_Kestrel__Certificates__Default__Password: mailgate_dev
+      ConnectionStrings__DefaultConnection: "Host=postgres;Database=mailgate;Username=mailgate;Password=mailgate"
+      MassTransit__Host: rabbitmq
+      MassTransit__Port: "5672"
+      MassTransit__VirtualHost: "/"
+      MassTransit__Username: mailgate
+      MassTransit__Password: mailgate
+    volumes:
+      - ~/.aspnet/https:/https:ro
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: src/MailGate.Worker/Dockerfile
+    container_name: mailgate-worker
+    environment:
+      DOTNET_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: "Host=postgres;Database=mailgate;Username=mailgate;Password=mailgate"
+      MassTransit__Host: rabbitmq
+      MassTransit__Port: "5672"
+      MassTransit__VirtualHost: "/"
+      MassTransit__Username: mailgate
+      MassTransit__Password: mailgate
+      Smtp__Host: mailhog
+      Smtp__Port: "1025"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
 volumes:
   rabbitmq_data:
   postgres_data:

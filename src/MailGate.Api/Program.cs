@@ -12,7 +12,19 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.ConfigureHttpJsonOptions(o =>
     o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options =>
+{
+    options.AddDocumentTransformer((document, _, _) =>
+    {
+        document.Info = new()
+        {
+            Title = "MailGate API",
+            Version = "v1",
+            Description = "REST API для отправки уведомлений через различные каналы связи (SMTP, мессенджеры и др.)"
+        };
+        return Task.CompletedTask;
+    });
+});
 
 builder.Services.AddScoped<IValidator<NotificationRequestDto>, NotificationRequestValidator>();
 
@@ -46,14 +58,22 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+
     app.MapScalarApiReference(options =>
     {
         options.Title = "MailGate API";
         options.Theme = ScalarTheme.Purple;
     });
-}
 
-app.UseHttpsRedirection();
+    app.UseSwaggerUI(options =>
+    {
+        options.SwaggerEndpoint("/openapi/v1.json", "MailGate API v1");
+        options.RoutePrefix = "swagger";
+        options.DocumentTitle = "MailGate API";
+    });
+
+    app.MapGet("/", () => Results.Redirect("/swagger")).ExcludeFromDescription();
+}
 
 app.MapNotificationEndpoints();
 
