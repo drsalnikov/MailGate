@@ -1,0 +1,150 @@
+@page "/recipients"
+@attribute [Authorize(Roles = AuthRoles.MailGateAdmin)]
+@inject RecipientsClient Client
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>MailGate — Получатели</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudText Typo="Typo.h4">Получатели</MudText>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add"
+               OnClick="OpenCreateDialog">Добавить</MudButton>
+</MudStack>
+
+<MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
+    <MudTextField @bind-Value="_search" Immediate="true" DebounceInterval="400"
+                  Placeholder="Поиск по ФИО или email..."
+                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                  OnDebounceIntervalElapsed="ReloadAsync" />
+</MudPaper>
+
+<MudTable Items="_items" Loading="_loading" Hover="true" Dense="true" Breakpoint="Breakpoint.Sm">
+    <HeaderContent>
+        <MudTh>ФИО</MudTh>
+        <MudTh>Email</MudTh>
+        <MudTh>Системы</MudTh>
+        <MudTh>Группы</MudTh>
+        <MudTh>Создан</MudTh>
+        <MudTh>Обновлён</MudTh>
+        <MudTh Style="width: 120px;"></MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>@context.FullName</MudTd>
+        <MudTd>@context.Email</MudTd>
+        <MudTd>
+            @if (context.Systems.Count == 0)
+            {
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Нет подписок</MudText>
+            }
+            else
+            {
+                <MudChipSet T="Guid" ReadOnly="true">
+                    @foreach (var system in context.Systems)
+                    {
+                        <MudChip T="Guid" Value="@system.Id" Text="@system.Name" Size="Size.Small" />
+                    }
+                </MudChipSet>
+            }
+        </MudTd>
+        <MudTd>
+            @if (context.Groups.Count == 0)
+            {
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Нет групп</MudText>
+            }
+            else
+            {
+                <MudChipSet T="Guid" ReadOnly="true">
+                    @foreach (var group in context.Groups)
+                    {
+                        <MudChip T="Guid" Value="@group.Id" Text="@group.Name" Size="Size.Small" />
+                    }
+                </MudChipSet>
+            }
+        </MudTd>
+        <MudTd>@context.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</MudTd>
+        <MudTd>@(context.UpdatedAt?.LocalDateTime.ToString("yyyy-MM-dd HH:mm") ?? "—")</MudTd>
+        <MudTd>
+            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                           OnClick="() => OpenEditDialog(context)" />
+            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                           OnClick="() => DeleteAsync(context)" />
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>Получателей пока нет.</NoRecordsContent>
+</MudTable>
+
+<MudPagination Class="mt-4" Count="@_totalPages" SelectedChanged="OnPageChanged" Selected="_page" />
+
+@code {
+    private string? _search;
+    private int _page = 1;
+    private const int PageSize = 50;
+    private int _totalPages = 1;
+    private bool _loading;
+    private List<RecipientDto> _items = [];
+
+    protected override Task OnInitializedAsync() => ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        _loading = true;
+        try
+        {
+            var result = await Client.ListAsync(_search, _page, PageSize);
+            _items = result.Items.ToList();
+            _totalPages = Math.Max(1, result.TotalPages);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Ошибка загрузки: {ex.Message}", Severity.Error);
+        }
+        finally { _loading = false; }
+    }
+
+    private async Task OnPageChanged(int page)
+    {
+        _page = page;
+        await ReloadAsync();
+    }
+
+    private async Task OpenCreateDialog()
+    {
+        var dialog = await DialogService.ShowAsync<RecipientEditDialog>("Новый получатель");
+        var result = await dialog.Result;
+        if (result is not null && !result.Canceled)
+            await ReloadAsync();
+    }
+
+    private async Task OpenEditDialog(RecipientDto recipient)
+    {
+        var parameters = new DialogParameters { ["Recipient"] = recipient };
+        var dialog = await DialogService.ShowAsync<RecipientEditDialog>("Редактировать", parameters);
+        var result = await dialog.Result;
+        if (result is not null && !result.Canceled)
+            await ReloadAsync();
+    }
+
+    private async Task DeleteAsync(RecipientDto recipient)
+    {
+        var confirm = await DialogService.ShowMessageBoxAsync(
+            "Удалить получателя",
+            $"Удалить «{recipient.FullName}» ({recipient.Email})?",
+            yesText: "Удалить", cancelText: "Отмена");
+
+        if (confirm != true) return;
+
+        try
+        {
+            await Client.DeleteAsync(recipient.Id);
+            Snackbar.Add("Получатель удалён", Severity.Success);
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Не удалось удалить: {ex.Message}", Severity.Error);
+        }
+    }
+}

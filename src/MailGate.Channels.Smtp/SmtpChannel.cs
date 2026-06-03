@@ -6,64 +6,55 @@ using MailGate.Core.Models;
 using MailKit.Net.Smtp;
 using MailKit.Security;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using MimeKit;
 using MimeKit.Text;
 
 namespace MailGate.Channels.Smtp;
 
-public sealed class SmtpChannel : INotificationChannel
+public sealed class SmtpChannel(
+    ISmtpSettingsProvider settingsProvider,
+    ILogger<SmtpChannel> logger) : INotificationChannel
 {
-    private readonly SmtpOptions _options;
-    private readonly OAuth2TokenProvider? _tokenProvider;
-    private readonly ILogger<SmtpChannel> _logger;
-
     public ChannelType ChannelType => ChannelType.Smtp;
-
-    public SmtpChannel(IOptions<SmtpOptions> options, ILogger<SmtpChannel> logger)
-    {
-        _options = options.Value;
-        _logger = logger;
-
-        if (_options.OAuth2 is not null)
-            _tokenProvider = new OAuth2TokenProvider(_options);
-    }
 
     public async Task<ChannelResult> SendAsync(NotificationMessage message, CancellationToken cancellationToken = default)
     {
         if (message.Recipients.Count == 0)
             return ChannelResult.Skip("No recipients.");
 
+        var options = await settingsProvider.GetEffectiveAsync(cancellationToken);
+
         try
         {
-            var mimeMessage = BuildMimeMessage(message);
+            var mimeMessage = BuildMimeMessage(message, options);
 
             using var client = new SmtpClient();
 
-            var secureSocketOptions = _options.UseSsl
+            var secureSocketOptions = options.UseSsl
                 ? SecureSocketOptions.SslOnConnect
-                : _options.UseTls
+                : options.UseTls
                     ? SecureSocketOptions.StartTls
                     : SecureSocketOptions.None;
 
-            await client.ConnectAsync(_options.Host, _options.Port, secureSocketOptions, cancellationToken);
+            await client.ConnectAsync(options.Host, options.Port, secureSocketOptions, cancellationToken);
 
-            if (_tokenProvider is not null)
+            if (options.OAuth2 is not null)
             {
-                var token = await _tokenProvider.GetAccessTokenAsync(cancellationToken);
+                var tokenProvider = new OAuth2TokenProvider(options);
+                var token = await tokenProvider.GetAccessTokenAsync(cancellationToken);
                 var oauth2 = new SaslMechanismOAuth2(
-                    _options.OAuth2!.SmtpUserPrincipalName, token);
+                    options.OAuth2.SmtpUserPrincipalName, token);
                 await client.AuthenticateAsync(oauth2, cancellationToken);
             }
-            else if (_options.Username is not null && _options.Password is not null)
+            else if (options.Username is not null && options.Password is not null)
             {
-                await client.AuthenticateAsync(_options.Username, _options.Password, cancellationToken);
+                await client.AuthenticateAsync(options.Username, options.Password, cancellationToken);
             }
 
             await client.SendAsync(mimeMessage, cancellationToken);
             await client.DisconnectAsync(quit: true, cancellationToken);
 
-            _logger.LogInformation(
+            logger.LogInformation(
                 "Email sent successfully for MessageId={MessageId}, Recipients={Count}",
                 message.MessageId, message.Recipients.Count);
 
@@ -71,16 +62,16 @@ public sealed class SmtpChannel : INotificationChannel
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex,
+            logger.LogError(ex,
                 "Failed to send email for MessageId={MessageId}", message.MessageId);
             return ChannelResult.Failure(ex.Message);
         }
     }
 
-    private MimeMessage BuildMimeMessage(NotificationMessage message)
+    private static MimeMessage BuildMimeMessage(NotificationMessage message, SmtpOptions options)
     {
         var mime = new MimeMessage();
-        mime.From.Add(new MailboxAddress(_options.FromName, _options.FromAddress));
+        mime.From.Add(new MailboxAddress(options.FromName, options.FromAddress));
 
         foreach (var recipient in message.Recipients)
             mime.To.Add(MailboxAddress.Parse(recipient));

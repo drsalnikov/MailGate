@@ -14,6 +14,7 @@ builder.Services.AddInfrastructure(builder.Configuration, bus =>
 }, enableConsumerOutbox: true);
 
 builder.Services.AddSmtpChannel(builder.Configuration);
+builder.Services.AddDbSmtpSettingsProvider();
 
 builder.Services.AddSingleton<IChannelRouter, ChannelRouter>();
 

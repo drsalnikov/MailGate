@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace MailGate.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(MailGateDbContext))]
-    [Migration("20260416105911_InitialCreate")]
+    [Migration("20260602131609_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -52,6 +52,9 @@ namespace MailGate.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("MessageId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("PayloadJson")
+                        .HasColumnType("jsonb");
+
                     b.Property<DateTimeOffset?>("ProcessedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -59,6 +62,9 @@ namespace MailGate.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(4096)
                         .HasColumnType("character varying(4096)");
+
+                    b.Property<Guid?>("RetryOfMessageId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -71,13 +77,168 @@ namespace MailGate.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CreatedAt");
+
                     b.HasIndex("IdempotencyKey")
                         .IsUnique()
                         .HasFilter("\"IdempotencyKey\" IS NOT NULL");
 
                     b.HasIndex("MessageId");
 
+                    b.HasIndex("Status");
+
                     b.ToTable("notification_logs", (string)null);
+                });
+
+            modelBuilder.Entity("MailGate.Core.Entities.NotificationSystem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.ToTable("systems", (string)null);
+                });
+
+            modelBuilder.Entity("MailGate.Core.Entities.Recipient", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)");
+
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Email")
+                        .IsUnique();
+
+                    b.ToTable("recipients", (string)null);
+                });
+
+            modelBuilder.Entity("MailGate.Core.Entities.RecipientGroup", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("recipient_groups", (string)null);
+                });
+
+            modelBuilder.Entity("MailGate.Core.Entities.SmtpConfiguration", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("EncryptedPassword")
+                        .HasMaxLength(4096)
+                        .HasColumnType("character varying(4096)");
+
+                    b.Property<string>("FromAddress")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)");
+
+                    b.Property<string>("FromName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Host")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("OAuth2ClientId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("OAuth2EncryptedClientSecret")
+                        .HasMaxLength(4096)
+                        .HasColumnType("character varying(4096)");
+
+                    b.Property<string>("OAuth2SmtpUserPrincipalName")
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)");
+
+                    b.Property<string>("OAuth2TenantId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<int>("Port")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("UseSsl")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("UseTls")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Username")
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("smtp_configurations", (string)null);
                 });
 
             modelBuilder.Entity("MassTransit.EntityFrameworkCoreIntegration.InboxState", b =>
@@ -224,10 +385,6 @@ namespace MailGate.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<string>("BusName")
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
-
                     b.Property<DateTime>("Created")
                         .HasColumnType("timestamp with time zone");
 
@@ -249,9 +406,37 @@ namespace MailGate.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("Created");
 
-                    b.HasIndex("BusName", "Created");
-
                     b.ToTable("OutboxState");
+                });
+
+            modelBuilder.Entity("RecipientGroupMember", b =>
+                {
+                    b.Property<Guid>("GroupId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("RecipientId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("GroupId", "RecipientId");
+
+                    b.HasIndex("RecipientId");
+
+                    b.ToTable("recipient_group_members", (string)null);
+                });
+
+            modelBuilder.Entity("RecipientSystem", b =>
+                {
+                    b.Property<Guid>("RecipientId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("SystemId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("RecipientId", "SystemId");
+
+                    b.HasIndex("SystemId");
+
+                    b.ToTable("recipient_systems", (string)null);
                 });
 
             modelBuilder.Entity("MassTransit.EntityFrameworkCoreIntegration.OutboxMessage", b =>
@@ -264,6 +449,36 @@ namespace MailGate.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("InboxMessageId", "InboxConsumerId")
                         .HasPrincipalKey("MessageId", "ConsumerId");
+                });
+
+            modelBuilder.Entity("RecipientGroupMember", b =>
+                {
+                    b.HasOne("MailGate.Core.Entities.RecipientGroup", null)
+                        .WithMany()
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("MailGate.Core.Entities.Recipient", null)
+                        .WithMany()
+                        .HasForeignKey("RecipientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("RecipientSystem", b =>
+                {
+                    b.HasOne("MailGate.Core.Entities.Recipient", null)
+                        .WithMany()
+                        .HasForeignKey("RecipientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("MailGate.Core.Entities.NotificationSystem", null)
+                        .WithMany()
+                        .HasForeignKey("SystemId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 #pragma warning restore 612, 618
         }

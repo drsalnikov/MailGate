@@ -1,0 +1,120 @@
+@inject RecipientsClient Client
+@inject SystemsClient SystemsClient
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudTextField @bind-Value="_fullName" Label="ФИО" Required="true" MaxLength="200" />
+        <MudTextField @bind-Value="_email" Label="Email" Required="true" MaxLength="320"
+                      InputType="InputType.Email" Class="mt-3" />
+        <MudSelect T="Guid" Label="Системы" MultiSelection="true"
+                   SelectedValues="_selectedSystemIds"
+                   SelectedValuesChanged="OnSelectedSystemsChanged"
+                   ToStringFunc="SystemIdToName"
+                   Class="mt-3">
+            @foreach (var system in _systems)
+            {
+                <MudSelectItem T="Guid" Value="@system.Id">@system.Name (@system.Code)</MudSelectItem>
+            }
+        </MudSelect>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Отмена</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                   OnClick="SubmitAsync" Disabled="_saving">
+            @if (_saving) { <MudProgressCircular Size="Size.Small" Indeterminate="true" /> }
+            else { @(Recipient is null ? "Создать" : "Сохранить") }
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public RecipientDto? Recipient { get; set; }
+
+    private string _fullName = string.Empty;
+    private string _email = string.Empty;
+    private List<SystemDto> _systems = [];
+    private HashSet<Guid> _selectedSystemIds = [];
+    private bool _saving;
+    private bool _initialized;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var result = await SystemsClient.ListAsync(null, 1, 500);
+            _systems = result.Items.ToList();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Не удалось загрузить системы: {ex.Message}", Severity.Error);
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (_initialized)
+            return;
+
+        if (Recipient is not null)
+        {
+            _fullName = Recipient.FullName;
+            _email = Recipient.Email;
+            _selectedSystemIds = Recipient.Systems.Select(x => x.Id).ToHashSet();
+        }
+
+        _initialized = true;
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task SubmitAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_fullName) || string.IsNullOrWhiteSpace(_email))
+        {
+            Snackbar.Add("Заполните все поля", Severity.Warning);
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            if (Recipient is null)
+            {
+                await Client.CreateAsync(new CreateRecipientDto
+                {
+                    FullName = _fullName,
+                    Email = _email,
+                    SystemIds = _selectedSystemIds.ToList()
+                });
+                Snackbar.Add("Получатель добавлен", Severity.Success);
+            }
+            else
+            {
+                await Client.UpdateAsync(Recipient.Id,
+                    new UpdateRecipientDto
+                    {
+                        FullName = _fullName,
+                        Email = _email,
+                        SystemIds = _selectedSystemIds.ToList()
+                    });
+                Snackbar.Add("Изменения сохранены", Severity.Success);
+            }
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Ошибка: {ex.Message}", Severity.Error);
+        }
+        finally { _saving = false; }
+    }
+
+    private void OnSelectedSystemsChanged(IEnumerable<Guid> values)
+        => _selectedSystemIds = values.ToHashSet();
+
+    private string SystemIdToName(Guid id)
+        => _systems.FirstOrDefault(x => x.Id == id) is { } system
+            ? system.Name
+            : id.ToString();
+}

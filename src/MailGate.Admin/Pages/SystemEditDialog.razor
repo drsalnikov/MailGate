@@ -1,0 +1,82 @@
+@inject SystemsClient Client
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudTextField @bind-Value="_code" Label="Код" Required="true" MaxLength="100"
+                      HelperText="Например: billing, crm, core-api" />
+        <MudTextField @bind-Value="_name" Label="Название" Required="true" MaxLength="200" Class="mt-3" />
+        <MudTextField @bind-Value="_description" Label="Описание" MaxLength="1000" Lines="3" Class="mt-3" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Отмена</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                   OnClick="SubmitAsync" Disabled="_saving">
+            @if (_saving) { <MudProgressCircular Size="Size.Small" Indeterminate="true" /> }
+            else { @(System is null ? "Создать" : "Сохранить") }
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public SystemDto? System { get; set; }
+
+    private string _code = string.Empty;
+    private string _name = string.Empty;
+    private string? _description;
+    private bool _saving;
+
+    protected override void OnParametersSet()
+    {
+        if (System is null)
+            return;
+
+        _code = System.Code;
+        _name = System.Name;
+        _description = System.Description;
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task SubmitAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_code) || string.IsNullOrWhiteSpace(_name))
+        {
+            Snackbar.Add("Заполните код и название системы", Severity.Warning);
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            if (System is null)
+            {
+                await Client.CreateAsync(new CreateSystemDto
+                {
+                    Code = _code,
+                    Name = _name,
+                    Description = _description
+                });
+                Snackbar.Add("Система добавлена", Severity.Success);
+            }
+            else
+            {
+                await Client.UpdateAsync(System.Id, new UpdateSystemDto
+                {
+                    Code = _code,
+                    Name = _name,
+                    Description = _description
+                });
+                Snackbar.Add("Изменения сохранены", Severity.Success);
+            }
+
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Ошибка: {ex.Message}", Severity.Error);
+        }
+        finally { _saving = false; }
+    }
+}

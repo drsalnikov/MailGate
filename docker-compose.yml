@@ -40,6 +40,23 @@ services:
       - "1025:1025"
       - "8025:8025"
 
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.2
+    container_name: mailgate-keycloak
+    command:
+      - start-dev
+      - --import-realm
+      - --hostname=http://keycloak.localhost:8180
+      - --hostname-strict=false
+      - --http-enabled=true
+    ports:
+      - "8180:8080"
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+    volumes:
+      - ./config/keycloak:/opt/keycloak/data/import:ro
+
   api:
     build:
       context: .
@@ -60,6 +77,19 @@ services:
       MassTransit__VirtualHost: "/"
       MassTransit__Username: mailgate
       MassTransit__Password: mailgate
+      Authentication__Keycloak__Authority: "http://keycloak.localhost:8180/realms/mailgate"
+      Authentication__Keycloak__Audience: "mailgate-api"
+      Authentication__Keycloak__ClientId: "mailgate-admin"
+      Authentication__Keycloak__AdminRole: "mailgate-admin"
+      Authentication__Keycloak__RequireHttpsMetadata: "false"
+      Smtp__Host: mailhog
+      Smtp__Port: "1025"
+      Smtp__UseTls: "false"
+      Smtp__UseSsl: "false"
+      Smtp__FromAddress: "noreply@mailgate.local"
+      Smtp__FromName: "MailGate"
+    extra_hosts:
+      - "keycloak.localhost:host-gateway"
     volumes:
       - ~/.aspnet/https:/https:ro
     depends_on:
@@ -67,6 +97,10 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      keycloak:
+        condition: service_started
+      mailhog:
+        condition: service_started
 
   worker:
     build:
@@ -88,6 +122,8 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      mailhog:
+        condition: service_started
 
 volumes:
   rabbitmq_data:

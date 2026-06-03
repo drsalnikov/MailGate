@@ -15,4 +15,15 @@ public sealed class NotificationLog
     public int AttemptCount { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? ProcessedAt { get; set; }
+
+    /// <summary>
+    /// Full serialized <see cref="MailGate.Core.Models.NotificationMessage"/> payload.
+    /// Used by admin UI to retry failed deliveries without losing body/metadata.
+    /// </summary>
+    public string? PayloadJson { get; set; }
+
+    /// <summary>
+    /// When this log represents a manual retry, points to the original MessageId.
+    /// </summary>
+    public Guid? RetryOfMessageId { get; set; }
 }

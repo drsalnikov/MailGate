@@ -1,0 +1,79 @@
+﻿@inherits LayoutComponentBase
+@inject NavigationManager Navigation
+
+<MudThemeProvider @ref="_themeProvider" IsDarkMode="_isDarkMode" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="1">
+        <AuthorizeView Roles="@AuthRoles.MailGateAdmin">
+            <Authorized>
+                <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start"
+                               OnClick="@ToggleDrawer" />
+            </Authorized>
+        </AuthorizeView>
+        <MudText Typo="Typo.h6" Class="ml-2">MailGate Admin</MudText>
+        <MudSpacer />
+        <MudTooltip Text="@(_isDarkMode ? "Светлая тема" : "Тёмная тема")">
+            <MudIconButton Icon="@(_isDarkMode ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)"
+                           Color="Color.Inherit"
+                           OnClick="@ToggleDarkMode" />
+        </MudTooltip>
+        <AuthorizeView Roles="@AuthRoles.MailGateAdmin">
+            <Authorized>
+                <MudTooltip Text="Swagger UI">
+                    <MudIconButton Icon="@Icons.Material.Filled.Api" Color="Color.Inherit" Href="/swagger" Target="_blank" />
+                </MudTooltip>
+            </Authorized>
+        </AuthorizeView>
+        <AuthorizeView>
+            <Authorized Context="auth">
+                <MudText Typo="Typo.body2" Class="mx-2">@GetUserName(auth.User)</MudText>
+                <MudButton Color="Color.Inherit" Variant="Variant.Text" OnClick="BeginLogout">
+                    Выйти
+                </MudButton>
+            </Authorized>
+            <NotAuthorized>
+                <MudButton Color="Color.Inherit" Variant="Variant.Text" OnClick="BeginLogin">
+                    Войти
+                </MudButton>
+            </NotAuthorized>
+        </AuthorizeView>
+    </MudAppBar>
+
+    <AuthorizeView Roles="@AuthRoles.MailGateAdmin">
+        <Authorized>
+            <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="1">
+                <NavMenu />
+            </MudDrawer>
+        </Authorized>
+    </AuthorizeView>
+
+    <MudMainContent>
+        <MudContainer MaxWidth="MaxWidth.False" Class="pa-4">
+            @Body
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    private MudThemeProvider? _themeProvider;
+    private bool _isDarkMode;
+    private bool _drawerOpen = true;
+
+    private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
+
+    private void ToggleDarkMode() => _isDarkMode = !_isDarkMode;
+
+    private void BeginLogin() => Navigation.NavigateToLogin("authentication/login");
+
+    private void BeginLogout() => Navigation.NavigateToLogout("authentication/logout");
+
+    private static string GetUserName(ClaimsPrincipal user)
+        => user.FindFirst("preferred_username")?.Value
+           ?? user.FindFirst(ClaimTypes.Name)?.Value
+           ?? user.FindFirst("name")?.Value
+           ?? "Пользователь";
+}

@@ -1,0 +1,61 @@
+@inject NotificationsClient Client
+
+<MudDialog>
+    <DialogContent>
+        @if (_details is null)
+        {
+            <MudProgressCircular Indeterminate="true" />
+        }
+        else
+        {
+            <MudSimpleTable Dense="true" Bordered="true" Hover="false" Style="width: 100%;">
+                <tbody>
+                    <tr><td><b>MessageId</b></td><td>@_details.MessageId</td></tr>
+                    @if (_details.RetryOfMessageId.HasValue)
+                    {
+                        <tr><td><b>Повтор для</b></td><td>@_details.RetryOfMessageId</td></tr>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(_details.IdempotencyKey))
+                    {
+                        <tr><td><b>IdempotencyKey</b></td><td>@_details.IdempotencyKey</td></tr>
+                    }
+                    <tr><td><b>Канал</b></td><td>@_details.Channel</td></tr>
+                    <tr><td><b>Статус</b></td><td>@_details.Status</td></tr>
+                    <tr><td><b>Попыток</b></td><td>@_details.AttemptCount</td></tr>
+                    <tr><td><b>Приоритет</b></td><td>@_details.Priority</td></tr>
+                    <tr><td><b>Создано</b></td><td>@_details.CreatedAt.LocalDateTime</td></tr>
+                    <tr><td><b>Обработано</b></td><td>@(_details.ProcessedAt?.LocalDateTime.ToString() ?? "—")</td></tr>
+                    <tr><td><b>Получатели</b></td><td>@string.Join(", ", _details.Recipients)</td></tr>
+                    <tr><td><b>Тема</b></td><td>@(_details.Subject ?? "—")</td></tr>
+                    @if (!string.IsNullOrWhiteSpace(_details.ErrorMessage))
+                    {
+                        <tr><td><b>Ошибка</b></td>
+                            <td><MudText Color="Color.Error">@_details.ErrorMessage</MudText></td></tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+
+            <MudText Typo="Typo.subtitle2" Class="mt-4 mb-1">Тело (@_details.BodyFormat)</MudText>
+            <MudPaper Class="pa-3" Outlined="true" Style="max-height: 320px; overflow: auto; white-space: pre-wrap;">
+                @(_details.Body ?? "— тело не сохранено (рассылка выполнена до обновления админки)")
+            </MudPaper>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Close">Закрыть</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public Guid Id { get; set; }
+
+    private NotificationLogDetailsDto? _details;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _details = await Client.GetAsync(Id);
+    }
+
+    private void Close() => MudDialog.Close(DialogResult.Ok(true));
+}

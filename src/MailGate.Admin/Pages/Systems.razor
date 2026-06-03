@@ -1,0 +1,125 @@
+@page "/systems"
+@attribute [Authorize(Roles = AuthRoles.MailGateAdmin)]
+@inject SystemsClient Client
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>MailGate - Системы</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+    <div>
+        <MudText Typo="Typo.h4">Системы</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            Системы используются для подписок получателей и фильтрации уведомлений.
+        </MudText>
+    </div>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add"
+               OnClick="OpenCreateDialog">Добавить</MudButton>
+</MudStack>
+
+<MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
+    <MudTextField @bind-Value="_search" Immediate="true" DebounceInterval="400"
+                  Placeholder="Поиск по коду, названию или описанию..."
+                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                  OnDebounceIntervalElapsed="ReloadAsync" />
+</MudPaper>
+
+<MudTable Items="_items" Loading="_loading" Hover="true" Dense="true" Breakpoint="Breakpoint.Sm">
+    <HeaderContent>
+        <MudTh>Код</MudTh>
+        <MudTh>Название</MudTh>
+        <MudTh>Описание</MudTh>
+        <MudTh>Подписчиков</MudTh>
+        <MudTh>Обновлена</MudTh>
+        <MudTh Style="width: 120px;"></MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd><code>@context.Code</code></MudTd>
+        <MudTd>@context.Name</MudTd>
+        <MudTd>@(context.Description ?? "—")</MudTd>
+        <MudTd>@context.SubscriberCount</MudTd>
+        <MudTd>@(context.UpdatedAt?.LocalDateTime.ToString("yyyy-MM-dd HH:mm") ?? "—")</MudTd>
+        <MudTd>
+            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                           OnClick="() => OpenEditDialog(context)" />
+            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                           OnClick="() => DeleteAsync(context)" />
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>Систем пока нет.</NoRecordsContent>
+</MudTable>
+
+<MudPagination Class="mt-4" Count="@_totalPages" SelectedChanged="OnPageChanged" Selected="_page" />
+
+@code {
+    private string? _search;
+    private int _page = 1;
+    private const int PageSize = 50;
+    private int _totalPages = 1;
+    private bool _loading;
+    private List<SystemDto> _items = [];
+
+    protected override Task OnInitializedAsync() => ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        _loading = true;
+        try
+        {
+            var result = await Client.ListAsync(_search, _page, PageSize);
+            _items = result.Items.ToList();
+            _totalPages = Math.Max(1, result.TotalPages);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Ошибка загрузки: {ex.Message}", Severity.Error);
+        }
+        finally { _loading = false; }
+    }
+
+    private async Task OnPageChanged(int page)
+    {
+        _page = page;
+        await ReloadAsync();
+    }
+
+    private async Task OpenCreateDialog()
+    {
+        var dialog = await DialogService.ShowAsync<SystemEditDialog>("Новая система");
+        var result = await dialog.Result;
+        if (result is not null && !result.Canceled)
+            await ReloadAsync();
+    }
+
+    private async Task OpenEditDialog(SystemDto system)
+    {
+        var parameters = new DialogParameters { ["System"] = system };
+        var dialog = await DialogService.ShowAsync<SystemEditDialog>("Редактировать систему", parameters);
+        var result = await dialog.Result;
+        if (result is not null && !result.Canceled)
+            await ReloadAsync();
+    }
+
+    private async Task DeleteAsync(SystemDto system)
+    {
+        var confirm = await DialogService.ShowMessageBoxAsync(
+            "Удалить систему",
+            $"Удалить «{system.Name}» ({system.Code})? Подписки получателей на эту систему тоже будут удалены.",
+            yesText: "Удалить", cancelText: "Отмена");
+
+        if (confirm != true) return;
+
+        try
+        {
+            await Client.DeleteAsync(system.Id);
+            Snackbar.Add("Система удалена", Severity.Success);
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Не удалось удалить: {ex.Message}", Severity.Error);
+        }
+    }
+}

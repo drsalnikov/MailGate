@@ -1,0 +1,253 @@
+@page "/recipient-groups/new"
+@page "/recipient-groups/{Id:guid}/edit"
+@attribute [Authorize(Roles = AuthRoles.MailGateAdmin)]
+@inject RecipientGroupsClient Client
+@inject RecipientsClient RecipientsClient
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>MailGate — @(Id is null ? "Новая группа" : "Редактирование группы")</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" OnClick="GoBack" />
+    <div>
+        <MudText Typo="Typo.h4">@(Id is null ? "Новая группа получателей" : "Редактирование группы")</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            Заполните название и отметьте получателей. Используйте поиск и фильтры по колонкам.
+        </MudText>
+    </div>
+</MudStack>
+
+<MudPaper Class="pa-4 mb-4" Outlined="true">
+    <MudGrid>
+        <MudItem xs="12" md="5">
+            <MudTextField @bind-Value="_name" Label="Название" Required="true" MaxLength="200"
+                          Immediate="true" Error="_nameError" ErrorText="Укажите название группы" />
+        </MudItem>
+        <MudItem xs="12" md="7">
+            <MudTextField @bind-Value="_description" Label="Описание" MaxLength="1000" Lines="1" />
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudPaper Class="pa-2 mb-2" Outlined="true">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap" Spacing="2" Class="pa-2">
+        <MudChip T="string" Color="Color.Primary" Variant="Variant.Filled" Icon="@Icons.Material.Filled.People">
+            Выбрано: @_selected.Count
+        </MudChip>
+        <MudSwitch T="bool" @bind-Value="_onlySelected" Color="Color.Primary" Label="Только выбранные" />
+        <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.ClearAll"
+                   Disabled="_selected.Count == 0" OnClick="ClearSelection">Снять выделение</MudButton>
+        <MudSpacer />
+        <MudTextField @bind-Value="_searchString" Immediate="true" DebounceInterval="200"
+                      Placeholder="Поиск по ФИО или email..." Clearable="true"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      Class="mt-0" Style="max-width: 360px;" />
+    </MudStack>
+</MudPaper>
+
+<MudDataGrid T="RecipientDto" Items="_recipients" Loading="_loading"
+             MultiSelection="true" SelectOnRowClick="true"
+             SelectedItems="_selected" SelectedItemsChanged="OnSelectedItemsChanged"
+             QuickFilter="_quickFilter"
+             Filterable="true" FilterMode="DataGridFilterMode.ColumnFilterMenu"
+             Hover="true" Dense="true" FixedHeader="true" Height="calc(100vh - 430px)"
+             SortMode="SortMode.Multiple" RowsPerPage="25">
+    <Columns>
+        <SelectColumn T="RecipientDto" />
+        <PropertyColumn Property="x => x.FullName" Title="ФИО" />
+        <PropertyColumn Property="x => x.Email" Title="Email" />
+        <PropertyColumn Property="@(x => string.Join(", ", x.Systems.Select(s => s.Name)))" Title="Системы">
+            <CellTemplate>
+                @if (context.Item.Systems.Count == 0)
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">—</MudText>
+                }
+                else
+                {
+                    <MudChipSet T="Guid" ReadOnly="true">
+                        @foreach (var system in context.Item.Systems)
+                        {
+                            <MudChip T="Guid" Value="@system.Id" Text="@system.Name" Size="Size.Small" />
+                        }
+                    </MudChipSet>
+                }
+            </CellTemplate>
+        </PropertyColumn>
+        <TemplateColumn Title="Группы" Sortable="false" Filterable="false">
+            <CellTemplate>
+                @if (context.Item.Groups.Count == 0)
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">—</MudText>
+                }
+                else
+                {
+                    <MudChipSet T="Guid" ReadOnly="true">
+                        @foreach (var group in context.Item.Groups)
+                        {
+                            <MudChip T="Guid" Value="@group.Id" Text="@group.Name" Size="Size.Small" Color="Color.Info" />
+                        }
+                    </MudChipSet>
+                }
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
+    <NoRecordsContent>
+        <MudText Class="pa-4" Color="Color.Secondary">Получателей не найдено.</MudText>
+    </NoRecordsContent>
+    <PagerContent>
+        <MudDataGridPager T="RecipientDto" RowsPerPageString="Строк на странице:" />
+    </PagerContent>
+</MudDataGrid>
+
+<MudStack Row="true" Spacing="2" Class="mt-4">
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Save"
+               OnClick="SubmitAsync" Disabled="_saving">
+        @if (_saving) { <MudProgressCircular Size="Size.Small" Indeterminate="true" /> }
+        else { @(Id is null ? "Создать группу" : "Сохранить") }
+    </MudButton>
+    <MudButton Variant="Variant.Text" OnClick="GoBack" Disabled="_saving">Отмена</MudButton>
+</MudStack>
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+
+    private string _name = string.Empty;
+    private string? _description;
+    private bool _nameError;
+    private bool _loading = true;
+    private bool _saving;
+    private bool _onlySelected;
+    private string? _searchString;
+
+    private List<RecipientDto> _recipients = [];
+    private HashSet<RecipientDto> _selected = [];
+
+    private Func<RecipientDto, bool> _quickFilter => recipient =>
+    {
+        if (_onlySelected && !_selected.Contains(recipient))
+            return false;
+
+        if (string.IsNullOrWhiteSpace(_searchString))
+            return true;
+
+        var term = _searchString.Trim();
+        return recipient.FullName.Contains(term, StringComparison.OrdinalIgnoreCase)
+            || recipient.Email.Contains(term, StringComparison.OrdinalIgnoreCase);
+    };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            _recipients = await LoadAllRecipientsAsync();
+
+            if (Id is Guid groupId)
+            {
+                var group = await Client.GetAsync(groupId);
+                if (group is null)
+                {
+                    Snackbar.Add("Группа не найдена", Severity.Error);
+                    GoBack();
+                    return;
+                }
+
+                _name = group.Name;
+                _description = group.Description;
+
+                var memberIds = group.Recipients.Select(x => x.Id).ToHashSet();
+                _selected = _recipients.Where(x => memberIds.Contains(x.Id)).ToHashSet();
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Ошибка загрузки: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task<List<RecipientDto>> LoadAllRecipientsAsync()
+    {
+        const int pageSize = 500;
+        var all = new List<RecipientDto>();
+        var page = 1;
+
+        while (true)
+        {
+            var result = await RecipientsClient.ListAsync(null, page, pageSize);
+            all.AddRange(result.Items);
+
+            if (result.Items.Count == 0 || all.Count >= result.TotalCount)
+                break;
+
+            page++;
+        }
+
+        return all;
+    }
+
+    private void OnSelectedItemsChanged(HashSet<RecipientDto> items)
+        => _selected = items;
+
+    private void ClearSelection()
+        => _selected = [];
+
+    private void GoBack()
+        => Nav.NavigateTo("recipient-groups");
+
+    private async Task SubmitAsync()
+    {
+        _nameError = string.IsNullOrWhiteSpace(_name);
+        if (_nameError)
+        {
+            Snackbar.Add("Укажите название группы", Severity.Warning);
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            var recipientIds = _selected.Select(x => x.Id).ToList();
+
+            if (Id is Guid groupId)
+            {
+                await Client.UpdateAsync(groupId, new UpdateRecipientGroupDto
+                {
+                    Name = _name,
+                    Description = _description,
+                    RecipientIds = recipientIds
+                });
+                Snackbar.Add("Изменения сохранены", Severity.Success);
+            }
+            else
+            {
+                await Client.CreateAsync(new CreateRecipientGroupDto
+                {
+                    Name = _name,
+                    Description = _description,
+                    RecipientIds = recipientIds
+                });
+                Snackbar.Add("Группа создана", Severity.Success);
+            }
+
+            GoBack();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Ошибка сохранения: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

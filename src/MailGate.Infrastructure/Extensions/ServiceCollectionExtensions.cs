@@ -1,9 +1,13 @@
 using MassTransit;
+using MailGate.Channels.Smtp.Services;
 using MailGate.Infrastructure.Messaging;
 using MailGate.Infrastructure.Persistence;
+using MailGate.Infrastructure.Services;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace MailGate.Infrastructure.Extensions;
 
@@ -23,6 +27,10 @@ public static class ServiceCollectionExtensions
         services.AddDbContext<MailGateDbContext>(options =>
             options.UseNpgsql(connectionString, npgsql =>
                 npgsql.MigrationsAssembly(typeof(MailGateDbContext).Assembly.FullName)));
+
+        services.AddMemoryCache();
+        services.AddDataProtection();
+        services.AddScoped<SmtpConfigurationStore>();
 
         var rmqOptions = configuration.GetSection(MassTransitOptions.SectionName).Get<MassTransitOptions>()
             ?? new MassTransitOptions();
@@ -62,6 +70,19 @@ public static class ServiceCollectionExtensions
             });
         });
 
+        return services;
+    }
+
+    /// <summary>
+    /// Replaces the default <see cref="ISmtpSettingsProvider"/> (which reads only from appsettings)
+    /// with <see cref="DbSmtpSettingsProvider"/>, enabling database-backed runtime overrides managed
+    /// through the admin UI.
+    /// </summary>
+    public static IServiceCollection AddDbSmtpSettingsProvider(this IServiceCollection services)
+    {
+        services.RemoveAll<ISmtpSettingsProvider>();
+        services.AddSingleton<DbSmtpSettingsProvider>();
+        services.AddSingleton<ISmtpSettingsProvider>(sp => sp.GetRequiredService<DbSmtpSettingsProvider>());
         return services;
     }
 }

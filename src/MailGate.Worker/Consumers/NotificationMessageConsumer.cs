@@ -18,6 +18,14 @@ public sealed class NotificationMessageConsumer(
     {
         var message = context.Message;
 
+        Guid? retryOf = null;
+        if (context.Headers.TryGetHeader("MailGate-RetryOf-MessageId", out var retryOfHeader)
+            && retryOfHeader is not null
+            && Guid.TryParse(retryOfHeader.ToString(), out var parsed))
+        {
+            retryOf = parsed;
+        }
+
         logger.LogInformation(
             "Processing notification MessageId={MessageId}, Channel={Channel}, Recipients={Count}",
             message.MessageId, message.Channel, message.Recipients.Count);
@@ -29,14 +37,14 @@ public sealed class NotificationMessageConsumer(
                 message.Channel, message.MessageId);
 
             await UpsertLogAsync(message, DeliveryStatus.Skipped,
-                $"Channel '{message.Channel}' is not registered.", context.CancellationToken);
+                $"Channel '{message.Channel}' is not registered.", retryOf, context.CancellationToken);
             return;
         }
 
         var channel = router.Resolve(message.Channel);
         var result = await channel.SendAsync(message, context.CancellationToken);
 
-        await UpsertLogAsync(message, result.Status, result.ErrorMessage, context.CancellationToken);
+        await UpsertLogAsync(message, result.Status, result.ErrorMessage, retryOf, context.CancellationToken);
 
         if (result.Status == DeliveryStatus.Failed)
         {
@@ -58,9 +66,9 @@ public sealed class NotificationMessageConsumer(
         NotificationMessage message,
         DeliveryStatus status,
         string? errorMessage,
+        Guid? retryOfMessageId,
         CancellationToken cancellationToken)
     {
-        // Find existing log by MessageId (covers retries with the same message).
         var existing = await dbContext.NotificationLogs
             .FirstOrDefaultAsync(l => l.MessageId == message.MessageId, cancellationToken);
 
@@ -83,10 +91,18 @@ public sealed class NotificationMessageConsumer(
                 Status = status,
                 ErrorMessage = errorMessage,
                 AttemptCount = 1,
-                ProcessedAt = DateTimeOffset.UtcNow
+                ProcessedAt = DateTimeOffset.UtcNow,
+                PayloadJson = JsonSerializer.Serialize(message, PayloadSerializerOptions),
+                RetryOfMessageId = retryOfMessageId
             });
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
     }
+
+    private static readonly JsonSerializerOptions PayloadSerializerOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+    };
 }

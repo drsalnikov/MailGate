@@ -1,0 +1,48 @@
+@page "/settings"
+@attribute [Authorize(Roles = AuthRoles.MailGateAdmin)]
+
+<PageTitle>MailGate - Настройки</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Настройки</MudText>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12">
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+            Раздел содержит технические настройки MailGate и инструменты диагностики доступа.
+        </MudAlert>
+    </MudItem>
+
+    <MudItem xs="12" md="6">
+        <MudCard Outlined="true" Class="h-100">
+            <MudCardContent>
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-3">
+                    <MudIcon Icon="@Icons.Material.Filled.Settings" Color="Color.Secondary" />
+                    <MudText Typo="Typo.h6">Настройка SMTP</MudText>
+                </MudStack>
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+                    Просмотр эффективной SMTP-конфигурации, сохранение переопределения в базе данных и проверка подключения.
+                </MudText>
+                <MudButton Href="smtp" Variant="Variant.Filled" Color="Color.Secondary" FullWidth="true">
+                    Открыть SMTP
+                </MudButton>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+
+    <MudItem xs="12" md="6">
+        <MudCard Outlined="true" Class="h-100">
+            <MudCardContent>
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-3">
+                    <MudIcon Icon="@Icons.Material.Filled.BugReport" Color="Color.Secondary" />
+                    <MudText Typo="Typo.h6">Диагностика</MudText>
+                </MudStack>
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+                    Просмотр OIDC claims и ролей текущего пользователя для проверки авторизации через Keycloak.
+                </MudText>
+                <MudButton Href="debug/claims" Variant="Variant.Filled" Color="Color.Secondary" FullWidth="true">
+                    Открыть диагностику
+                </MudButton>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+</MudGrid>

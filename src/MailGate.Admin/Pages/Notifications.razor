@@ -1,0 +1,156 @@
+@page "/notifications"
+@attribute [Authorize(Roles = AuthRoles.MailGateAdmin)]
+@inject NotificationsClient Client
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<PageTitle>MailGate — Рассылки</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudText Typo="Typo.h4">Рассылки</MudText>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Send"
+               Href="notifications/new">Новая рассылка</MudButton>
+</MudStack>
+
+<MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
+    <MudGrid>
+        <MudItem xs="12" md="4">
+            <MudSelect T="DeliveryStatus?" Label="Статус" @bind-Value="_status"
+                       Clearable="true" AnchorOrigin="Origin.BottomCenter"
+                       ToStringFunc="@(v => v?.ToString() ?? "Все")">
+                <MudSelectItem T="DeliveryStatus?" Value="@((DeliveryStatus?)DeliveryStatus.Sent)">Sent</MudSelectItem>
+                <MudSelectItem T="DeliveryStatus?" Value="@((DeliveryStatus?)DeliveryStatus.Failed)">Failed</MudSelectItem>
+                <MudSelectItem T="DeliveryStatus?" Value="@((DeliveryStatus?)DeliveryStatus.Skipped)">Skipped</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudTextField @bind-Value="_search" Immediate="true" DebounceInterval="400"
+                          Label="Поиск по теме, получателю, idempotency-key" />
+        </MudItem>
+        <MudItem xs="12" md="2" Class="d-flex align-center">
+            <MudButton Variant="Variant.Outlined" OnClick="ReloadAsync" FullWidth="true"
+                       StartIcon="@Icons.Material.Filled.Refresh">Обновить</MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudTable Items="_items" Loading="_loading" Hover="true" Dense="true" Breakpoint="Breakpoint.Sm">
+    <HeaderContent>
+        <MudTh>Создано</MudTh>
+        <MudTh>Канал</MudTh>
+        <MudTh>Получатели</MudTh>
+        <MudTh>Тема</MudTh>
+        <MudTh>Статус</MudTh>
+        <MudTh>Попыток</MudTh>
+        <MudTh Style="width: 140px;"></MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>@context.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss")</MudTd>
+        <MudTd>@context.Channel</MudTd>
+        <MudTd Style="max-width: 260px; overflow: hidden; text-overflow: ellipsis;">
+            @string.Join(", ", context.Recipients)
+        </MudTd>
+        <MudTd>@(context.Subject ?? "—")</MudTd>
+        <MudTd>
+            <MudChip T="string" Size="Size.Small" Color="@StatusColor(context.Status)">
+                @context.Status
+            </MudChip>
+        </MudTd>
+        <MudTd>@context.AttemptCount</MudTd>
+        <MudTd>
+            <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
+                           OnClick="() => ShowDetails(context)" />
+            @if (context.Status == DeliveryStatus.Failed)
+            {
+                <MudIconButton Icon="@Icons.Material.Filled.Replay" Size="Size.Small" Color="Color.Primary"
+                               OnClick="() => RetryAsync(context)" />
+            }
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>Записей не найдено.</NoRecordsContent>
+</MudTable>
+
+<MudPagination Class="mt-4" Count="@_totalPages" SelectedChanged="OnPageChanged" Selected="_page" />
+
+@code {
+    private DeliveryStatus? _status;
+    private string? _search;
+    private int _page = 1;
+    private const int PageSize = 50;
+    private int _totalPages = 1;
+    private bool _loading;
+    private List<NotificationLogDto> _items = [];
+
+    protected override Task OnInitializedAsync() => ReloadAsync();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _loading = true;
+        try
+        {
+            var result = await Client.ListAsync(_status, _search, _page, PageSize);
+            _items = result.Items.ToList();
+            _totalPages = Math.Max(1, result.TotalPages);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Ошибка загрузки: {ex.Message}", Severity.Error);
+        }
+        finally { _loading = false; }
+    }
+
+    private async Task OnPageChanged(int page)
+    {
+        _page = page;
+        await ReloadAsync();
+    }
+
+    private static Color StatusColor(DeliveryStatus status) => status switch
+    {
+        DeliveryStatus.Sent => Color.Success,
+        DeliveryStatus.Failed => Color.Error,
+        DeliveryStatus.Skipped => Color.Warning,
+        _ => Color.Default
+    };
+
+    private async Task ShowDetails(NotificationLogDto row)
+    {
+        var parameters = new DialogParameters { ["Id"] = row.Id };
+        await DialogService.ShowAsync<NotificationDetailsDialog>(
+            $"Детали рассылки", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+    }
+
+    private async Task RetryAsync(NotificationLogDto row)
+    {
+        var confirm = await DialogService.ShowMessageBoxAsync(
+            "Повторить отправку",
+            $"Повторно отправить сообщение «{row.Subject ?? row.MessageId.ToString()}»?",
+            yesText: "Отправить", cancelText: "Отмена");
+        if (confirm != true) return;
+
+        try
+        {
+            var result = await Client.RetryAsync(row.Id);
+            if (result is null)
+            {
+                Snackbar.Add("Повтор недоступен: исходный payload не сохранён", Severity.Warning);
+                return;
+            }
+            Snackbar.Add($"Поставлено в очередь: {result.NewMessageId}", Severity.Success);
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Ошибка: {ex.Message}", Severity.Error);
+        }
+    }
+}

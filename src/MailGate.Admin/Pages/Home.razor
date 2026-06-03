@@ -1,0 +1,97 @@
+﻿@page "/"
+@attribute [Authorize]
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NotificationsClient Notifications
+
+<PageTitle>MailGate — Панель</PageTitle>
+
+@if (!_ready)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else if (!_isAdmin)
+{
+    <AccessDeniedNotice />
+}
+else
+{
+    <MudText Typo="Typo.h4" Class="mb-4">Главная</MudText>
+
+    @if (_stats is null)
+    {
+        <MudProgressCircular Indeterminate="true" />
+    }
+    else
+    {
+        <MudGrid Spacing="3">
+            <MudItem xs="12">
+                <MudCard Outlined="true" Class="h-100">
+                    <MudCardContent>
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-4">
+                            <MudIcon Icon="@Icons.Material.Filled.Dashboard" Color="Color.Primary" Size="Size.Large" />
+                            <div>
+                                <MudText Typo="Typo.h5">Панель</MudText>
+                                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                                    Ключевая статистика MailGate за последние 24 часа.
+                                </MudText>
+                            </div>
+                        </MudStack>
+
+                        <MudGrid>
+                            <MudItem xs="12" sm="6" md="3">
+                                <MudPaper Outlined="true" Class="pa-4">
+                                    <MudText Typo="Typo.subtitle2" Color="Color.Success">Отправлено за 24ч</MudText>
+                                    <MudText Typo="Typo.h3">@_stats.SentLast24h</MudText>
+                                </MudPaper>
+                            </MudItem>
+                            <MudItem xs="12" sm="6" md="3">
+                                <MudPaper Outlined="true" Class="pa-4">
+                                    <MudText Typo="Typo.subtitle2" Color="Color.Error">Ошибок за 24ч</MudText>
+                                    <MudText Typo="Typo.h3">@_stats.FailedLast24h</MudText>
+                                </MudPaper>
+                            </MudItem>
+                            <MudItem xs="12" sm="6" md="3">
+                                <MudPaper Outlined="true" Class="pa-4">
+                                    <MudText Typo="Typo.subtitle2" Color="Color.Warning">Пропущено за 24ч</MudText>
+                                    <MudText Typo="Typo.h3">@_stats.SkippedLast24h</MudText>
+                                </MudPaper>
+                            </MudItem>
+                            <MudItem xs="12" sm="6" md="3">
+                                <MudPaper Outlined="true" Class="pa-4">
+                                    <MudText Typo="Typo.subtitle2" Color="Color.Info">Получателей в адресной книге</MudText>
+                                    <MudText Typo="Typo.h3">@_stats.TotalRecipients</MudText>
+                                </MudPaper>
+                            </MudItem>
+                        </MudGrid>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+        </MudGrid>
+    }
+}
+
+@code {
+    private bool _ready;
+    private bool _isAdmin;
+    private NotificationStatsDto? _stats;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        _isAdmin = state.User.IsInRole(AuthRoles.MailGateAdmin);
+
+        if (_isAdmin)
+        {
+            try
+            {
+                _stats = await Notifications.GetStatsAsync();
+            }
+            catch
+            {
+                _stats = new NotificationStatsDto(0, 0, 0, 0);
+            }
+        }
+
+        _ready = true;
+    }
+}

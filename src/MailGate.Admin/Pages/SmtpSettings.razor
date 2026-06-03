@@ -1,0 +1,234 @@
+@page "/smtp"
+@attribute [Authorize(Roles = AuthRoles.MailGateAdmin)]
+@inject SmtpAdminClient Client
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>MailGate — Настройки SMTP</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Настройки SMTP</MudText>
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else
+{
+    <MudAlert Severity="@(_effective.Source == SmtpConfigurationSource.Database ? Severity.Info : Severity.Normal)"
+              Class="mb-4">
+        Эффективные настройки загружены из
+        <b>@(_effective.Source == SmtpConfigurationSource.Database ? "базы данных" : "appsettings.json")</b>.
+        @if (_effective.UpdatedAt.HasValue)
+        {
+            <span> Обновлено: @_effective.UpdatedAt.Value.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</span>
+        }
+    </MudAlert>
+
+    @if (string.Equals(_form.Host, "localhost", StringComparison.OrdinalIgnoreCase)
+         || string.Equals(_form.Host, "127.0.0.1", StringComparison.OrdinalIgnoreCase))
+    {
+        <MudAlert Severity="Severity.Warning" Class="mb-4" Dense="true">
+            При запуске через <b>docker compose</b> укажите хост <b>mailhog</b> и порт <b>1025</b>
+            (не <code>localhost</code> — из контейнера API/Worker это другой хост).
+            Если настройки уже сохранены в БД, измените Host и нажмите «Сохранить» или сбросьте переопределение.
+        </MudAlert>
+    }
+
+    <MudPaper Class="pa-4" Outlined="true">
+        <MudGrid>
+            <MudItem xs="12" md="8">
+                <MudTextField @bind-Value="_form.Host" Label="Host" Required="true"
+                              HelperText="Docker Compose: mailhog" />
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudNumericField @bind-Value="_form.Port" Label="Port" Min="1" Max="65535" />
+            </MudItem>
+            <MudItem xs="6" md="3">
+                <MudSwitch T="bool" @bind-Value="_form.UseSsl" Label="SSL (implicit)" Color="Color.Primary" />
+            </MudItem>
+            <MudItem xs="6" md="3">
+                <MudSwitch T="bool" @bind-Value="_form.UseTls" Label="STARTTLS" Color="Color.Primary" />
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudTextField @bind-Value="_form.FromAddress" Label="From Address" Required="true" />
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudTextField @bind-Value="_form.FromName" Label="From Name" Required="true" />
+            </MudItem>
+
+            <MudItem xs="12"><MudDivider Class="my-2" /><MudText Typo="Typo.subtitle2">Basic Auth</MudText></MudItem>
+            <MudItem xs="12" md="6">
+                <MudTextField @bind-Value="_form.Username" Label="Username" />
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudTextField @bind-Value="_form.Password" Label="Password"
+                              InputType="InputType.Password"
+                              HelperText="@(_effective.HasPassword ? "Оставьте пустым, чтобы не менять существующий пароль" : "")" />
+            </MudItem>
+
+            <MudItem xs="12">
+                <MudDivider Class="my-2" />
+                <MudSwitch T="bool" Value="_oauthEnabled" ValueChanged="OnOAuthToggled"
+                           Label="OAuth2 (Exchange Online / M365)" Color="Color.Secondary" />
+            </MudItem>
+            @if (_oauthEnabled && _form.OAuth2 is not null)
+            {
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_form.OAuth2.TenantId" Label="Tenant ID" Required="true" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_form.OAuth2.ClientId" Label="Client ID" Required="true" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_form.OAuth2.ClientSecret" Label="Client Secret"
+                                  InputType="InputType.Password"
+                                  HelperText="@(_effective.OAuth2?.HasClientSecret == true ? "Оставьте пустым, чтобы не менять" : "")" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_form.OAuth2.SmtpUserPrincipalName"
+                                  Label="SMTP User Principal Name" Required="true" />
+                </MudItem>
+            }
+        </MudGrid>
+
+        <MudStack Row="true" Spacing="2" Class="mt-6">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Save"
+                       OnClick="SaveAsync" Disabled="_saving">
+                @if (_saving) { <MudProgressCircular Size="Size.Small" Indeterminate="true" /> } else { @("Сохранить") }
+            </MudButton>
+            <MudButton Variant="Variant.Outlined"
+                       StartIcon="@Icons.Material.Filled.NetworkCheck"
+                       OnClick="TestAsync" Disabled="_testing">
+                @if (_testing) { <MudProgressCircular Size="Size.Small" Indeterminate="true" /> } else { @("Проверить подключение") }
+            </MudButton>
+            @if (_effective.Source == SmtpConfigurationSource.Database)
+            {
+                <MudSpacer />
+                <MudButton Variant="Variant.Text" Color="Color.Error"
+                           StartIcon="@Icons.Material.Filled.Delete"
+                           OnClick="DeleteOverrideAsync">Сбросить переопределение</MudButton>
+            }
+        </MudStack>
+
+        @if (_lastTest is not null)
+        {
+            <MudAlert Class="mt-4"
+                      Severity="@(_lastTest.Success ? Severity.Success : Severity.Error)">
+                @(_lastTest.Success
+                    ? $"Успешно. Длительность: {_lastTest.DurationMs} мс"
+                    : $"Ошибка ({_lastTest.DurationMs} мс): {_lastTest.ErrorMessage}")
+            </MudAlert>
+        }
+    </MudPaper>
+}
+
+@code {
+    private bool _loading = true;
+    private bool _saving;
+    private bool _testing;
+    private bool _oauthEnabled;
+    private SmtpConfigurationDto _effective = default!;
+    private UpdateSmtpConfigurationDto _form = new();
+    private SmtpTestResultDto? _lastTest;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            _effective = await Client.GetEffectiveAsync();
+            _form = new UpdateSmtpConfigurationDto
+            {
+                Host = _effective.Host,
+                Port = _effective.Port,
+                UseSsl = _effective.UseSsl,
+                UseTls = _effective.UseTls,
+                FromAddress = _effective.FromAddress,
+                FromName = _effective.FromName,
+                Username = _effective.Username,
+                OAuth2 = _effective.OAuth2 is null ? null : new UpdateSmtpOAuth2Dto
+                {
+                    TenantId = _effective.OAuth2.TenantId,
+                    ClientId = _effective.OAuth2.ClientId,
+                    SmtpUserPrincipalName = _effective.OAuth2.SmtpUserPrincipalName
+                }
+            };
+            _oauthEnabled = _form.OAuth2 is not null;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Не удалось загрузить настройки: {ex.Message}", Severity.Error);
+        }
+        finally { _loading = false; }
+    }
+
+    private void OnOAuthToggled(bool value)
+    {
+        _oauthEnabled = value;
+        if (value)
+        {
+            _form.OAuth2 ??= new UpdateSmtpOAuth2Dto();
+        }
+        else
+        {
+            _form.OAuth2 = null;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        try
+        {
+            await Client.UpdateOverrideAsync(_form);
+            Snackbar.Add("Настройки сохранены", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Ошибка: {ex.Message}", Severity.Error);
+        }
+        finally { _saving = false; }
+    }
+
+    private async Task TestAsync()
+    {
+        _testing = true;
+        _lastTest = null;
+        try
+        {
+            _lastTest = await Client.TestAsync(_form);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Ошибка тестирования: {ex.Message}", Severity.Error);
+        }
+        finally { _testing = false; }
+    }
+
+    private async Task DeleteOverrideAsync()
+    {
+        var confirm = await DialogService.ShowMessageBoxAsync(
+            "Сбросить переопределение",
+            "Удалить SMTP-настройки из БД и вернуться к appsettings.json?",
+            yesText: "Сбросить", cancelText: "Отмена");
+        if (confirm != true) return;
+
+        try
+        {
+            await Client.DeleteOverrideAsync();
+            Snackbar.Add("Переопределение удалено", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Ошибка: {ex.Message}", Severity.Error);
+        }
+    }
+}

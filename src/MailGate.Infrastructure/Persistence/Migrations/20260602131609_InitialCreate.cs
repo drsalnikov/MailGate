@@ -49,7 +49,9 @@ namespace MailGate.Infrastructure.Persistence.Migrations
                     ErrorMessage = table.Column<string>(type: "character varying(2000)", maxLength: 2000, nullable: true),
                     AttemptCount = table.Column<int>(type: "integer", nullable: false),
                     CreatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
-                    ProcessedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true)
+                    ProcessedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    PayloadJson = table.Column<string>(type: "jsonb", nullable: true),
+                    RetryOfMessageId = table.Column<Guid>(type: "uuid", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -65,12 +67,81 @@ namespace MailGate.Infrastructure.Persistence.Migrations
                     RowVersion = table.Column<byte[]>(type: "bytea", rowVersion: true, nullable: true),
                     Created = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     Delivered = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    LastSequenceNumber = table.Column<long>(type: "bigint", nullable: true),
-                    BusName = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: true)
+                    LastSequenceNumber = table.Column<long>(type: "bigint", nullable: true)
                 },
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_OutboxState", x => x.OutboxId);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "recipient_groups",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    Name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
+                    Description = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
+                    CreatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_recipient_groups", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "recipients",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    FullName = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
+                    Email = table.Column<string>(type: "character varying(320)", maxLength: 320, nullable: false),
+                    CreatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_recipients", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "smtp_configurations",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    Host = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: false),
+                    Port = table.Column<int>(type: "integer", nullable: false),
+                    UseSsl = table.Column<bool>(type: "boolean", nullable: false),
+                    UseTls = table.Column<bool>(type: "boolean", nullable: false),
+                    FromAddress = table.Column<string>(type: "character varying(320)", maxLength: 320, nullable: false),
+                    FromName = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
+                    Username = table.Column<string>(type: "character varying(320)", maxLength: 320, nullable: true),
+                    EncryptedPassword = table.Column<string>(type: "character varying(4096)", maxLength: 4096, nullable: true),
+                    OAuth2TenantId = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: true),
+                    OAuth2ClientId = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: true),
+                    OAuth2EncryptedClientSecret = table.Column<string>(type: "character varying(4096)", maxLength: 4096, nullable: true),
+                    OAuth2SmtpUserPrincipalName = table.Column<string>(type: "character varying(320)", maxLength: 320, nullable: true),
+                    UpdatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_smtp_configurations", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "systems",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    Code = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
+                    Name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
+                    Description = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
+                    CreatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_systems", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
@@ -115,10 +186,63 @@ namespace MailGate.Infrastructure.Persistence.Migrations
                         principalColumn: "OutboxId");
                 });
 
+            migrationBuilder.CreateTable(
+                name: "recipient_group_members",
+                columns: table => new
+                {
+                    GroupId = table.Column<Guid>(type: "uuid", nullable: false),
+                    RecipientId = table.Column<Guid>(type: "uuid", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_recipient_group_members", x => new { x.GroupId, x.RecipientId });
+                    table.ForeignKey(
+                        name: "FK_recipient_group_members_recipient_groups_GroupId",
+                        column: x => x.GroupId,
+                        principalTable: "recipient_groups",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_recipient_group_members_recipients_RecipientId",
+                        column: x => x.RecipientId,
+                        principalTable: "recipients",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "recipient_systems",
+                columns: table => new
+                {
+                    RecipientId = table.Column<Guid>(type: "uuid", nullable: false),
+                    SystemId = table.Column<Guid>(type: "uuid", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_recipient_systems", x => new { x.RecipientId, x.SystemId });
+                    table.ForeignKey(
+                        name: "FK_recipient_systems_recipients_RecipientId",
+                        column: x => x.RecipientId,
+                        principalTable: "recipients",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_recipient_systems_systems_SystemId",
+                        column: x => x.SystemId,
+                        principalTable: "systems",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
             migrationBuilder.CreateIndex(
                 name: "IX_InboxState_Delivered",
                 table: "InboxState",
                 column: "Delivered");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_notification_logs_CreatedAt",
+                table: "notification_logs",
+                column: "CreatedAt");
 
             migrationBuilder.CreateIndex(
                 name: "IX_notification_logs_IdempotencyKey",
@@ -131,6 +255,11 @@ namespace MailGate.Infrastructure.Persistence.Migrations
                 name: "IX_notification_logs_MessageId",
                 table: "notification_logs",
                 column: "MessageId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_notification_logs_Status",
+                table: "notification_logs",
+                column: "Status");
 
             migrationBuilder.CreateIndex(
                 name: "IX_OutboxMessage_EnqueueTime",
@@ -155,14 +284,37 @@ namespace MailGate.Infrastructure.Persistence.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_OutboxState_BusName_Created",
-                table: "OutboxState",
-                columns: new[] { "BusName", "Created" });
-
-            migrationBuilder.CreateIndex(
                 name: "IX_OutboxState_Created",
                 table: "OutboxState",
                 column: "Created");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_recipient_group_members_RecipientId",
+                table: "recipient_group_members",
+                column: "RecipientId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_recipient_groups_Name",
+                table: "recipient_groups",
+                column: "Name",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_recipient_systems_SystemId",
+                table: "recipient_systems",
+                column: "SystemId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_recipients_Email",
+                table: "recipients",
+                column: "Email",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_systems_Code",
+                table: "systems",
+                column: "Code",
+                unique: true);
         }
 
         /// <inheritdoc />
@@ -175,10 +327,28 @@ namespace MailGate.Infrastructure.Persistence.Migrations
                 name: "OutboxMessage");
 
             migrationBuilder.DropTable(
+                name: "recipient_group_members");
+
+            migrationBuilder.DropTable(
+                name: "recipient_systems");
+
+            migrationBuilder.DropTable(
+                name: "smtp_configurations");
+
+            migrationBuilder.DropTable(
                 name: "InboxState");
 
             migrationBuilder.DropTable(
                 name: "OutboxState");
+
+            migrationBuilder.DropTable(
+                name: "recipient_groups");
+
+            migrationBuilder.DropTable(
+                name: "recipients");
+
+            migrationBuilder.DropTable(
+                name: "systems");
         }
     }
 }

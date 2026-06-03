@@ -1,0 +1,120 @@
+{
+  "realm": "mailgate",
+  "enabled": true,
+  "sslRequired": "NONE",
+  "displayName": "MailGate",
+  "roles": {
+    "realm": [
+      {
+        "name": "mailgate-admin",
+        "description": "Allows access to MailGate Admin UI and admin API."
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "mailgate-api",
+      "name": "MailGate API",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "bearerOnly": true
+    },
+    {
+      "clientId": "mailgate-admin",
+      "name": "MailGate Admin UI",
+      "enabled": true,
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://localhost:8080/authentication/login-callback",
+        "http://localhost:8080/swagger/oauth2-redirect.html"
+      ],
+      "webOrigins": [
+        "http://localhost:8080"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:8080/authentication/logout-callback"
+      },
+      "protocolMappers": [
+        {
+          "name": "mailgate-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "mailgate-api",
+            "access.token.claim": "true"
+          }
+        },
+        {
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "user.attribute": "foo",
+            "claim.name": "realm_access.roles",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "true"
+          }
+        },
+        {
+          "name": "realm roles (top-level)",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "user.attribute": "foo",
+            "claim.name": "roles",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "mailgate-admin",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "MailGate",
+      "lastName": "Administrator",
+      "email": "mailgate-admin@example.local",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "mailgate",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "mailgate-admin"
+      ]
+    },
+    {
+      "username": "mailgate-user",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "MailGate",
+      "lastName": "User",
+      "email": "mailgate-user@example.local",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "mailgate",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}
