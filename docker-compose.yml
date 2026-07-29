@@ -3,11 +3,11 @@ services:
     image: rabbitmq:3.13-management
     container_name: mailgate-rabbitmq
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
     environment:
-      RABBITMQ_DEFAULT_USER: mailgate
-      RABBITMQ_DEFAULT_PASS: mailgate
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-mailgate}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-mailgate}
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
@@ -20,15 +20,15 @@ services:
     image: postgres:16-alpine
     container_name: mailgate-postgres
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     environment:
-      POSTGRES_DB: mailgate
-      POSTGRES_USER: mailgate
-      POSTGRES_PASSWORD: mailgate
+      POSTGRES_DB: ${POSTGRES_DB:-mailgate}
+      POSTGRES_USER: ${POSTGRES_USER:-mailgate}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mailgate}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U mailgate"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mailgate}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -37,8 +37,8 @@ services:
     image: mailhog/mailhog
     container_name: mailgate-mailhog
     ports:
-      - "1025:1025"
-      - "8025:8025"
+      - "${MAILHOG_SMTP_PORT:-1025}:1025"
+      - "${MAILHOG_UI_PORT:-8025}:8025"
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.2
@@ -46,14 +46,17 @@ services:
     command:
       - start-dev
       - --import-realm
-      - --hostname=http://keycloak.localhost:8180
-      - --hostname-strict=false
-      - --http-enabled=true
     ports:
-      - "8180:8080"
+      - "${KEYCLOAK_PORT:-8180}:8080"
     environment:
-      KC_BOOTSTRAP_ADMIN_USERNAME: admin
-      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      # Внешний URL Keycloak (issuer токенов). За nginx укажите https://keycloak.<домен>
+      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-http://keycloak.localhost:8180}
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+      # Доверять заголовкам X-Forwarded-* от реверс-прокси
+      KC_PROXY_HEADERS: xforwarded
     volumes:
       - ./config/keycloak:/opt/keycloak/data/import:ro
 
@@ -63,31 +66,35 @@ services:
       dockerfile: src/MailGate.Api/Dockerfile
     container_name: mailgate-api
     ports:
-      - "8080:8080"
-      - "8443:8443"
+      - "${API_HTTP_PORT:-8080}:8080"
+      - "${API_HTTPS_PORT:-8443}:8443"
     environment:
-      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
       ASPNETCORE_HTTP_PORTS: "8080"
-      ASPNETCORE_HTTPS_PORTS: "8443"
-      ASPNETCORE_Kestrel__Certificates__Default__Path: /https/mailgate.pfx
-      ASPNETCORE_Kestrel__Certificates__Default__Password: mailgate_dev
-      ConnectionStrings__DefaultConnection: "Host=postgres;Database=mailgate;Username=mailgate;Password=mailgate"
+      # HTTPS выключен по умолчанию; включается, если задать API_HTTPS_ENABLED=true
+      # и положить сертификат в ~/.aspnet/https (см. .env.example)
+      ASPNETCORE_HTTPS_PORTS: ${API_HTTPS_ENABLED:+8443}
+      ASPNETCORE_Kestrel__Certificates__Default__Path: ${API_HTTPS_ENABLED:+${KESTREL_CERT_PATH:-/https/mailgate.pfx}}
+      ASPNETCORE_Kestrel__Certificates__Default__Password: ${API_HTTPS_ENABLED:+${KESTREL_CERT_PASSWORD:-mailgate_dev}}
+      ConnectionStrings__DefaultConnection: "Host=postgres;Database=${POSTGRES_DB:-mailgate};Username=${POSTGRES_USER:-mailgate};Password=${POSTGRES_PASSWORD:-mailgate}"
       MassTransit__Host: rabbitmq
       MassTransit__Port: "5672"
       MassTransit__VirtualHost: "/"
-      MassTransit__Username: mailgate
-      MassTransit__Password: mailgate
-      Authentication__Keycloak__Authority: "http://keycloak.localhost:8180/realms/mailgate"
-      Authentication__Keycloak__Audience: "mailgate-api"
-      Authentication__Keycloak__ClientId: "mailgate-admin"
-      Authentication__Keycloak__AdminRole: "mailgate-admin"
-      Authentication__Keycloak__RequireHttpsMetadata: "false"
-      Smtp__Host: mailhog
-      Smtp__Port: "1025"
-      Smtp__UseTls: "false"
-      Smtp__UseSsl: "false"
-      Smtp__FromAddress: "noreply@mailgate.local"
-      Smtp__FromName: "MailGate"
+      MassTransit__Username: ${RABBITMQ_USER:-mailgate}
+      MassTransit__Password: ${RABBITMQ_PASSWORD:-mailgate}
+      Authentication__Keycloak__Authority: ${KEYCLOAK_AUTHORITY:-http://keycloak.localhost:8180/realms/mailgate}
+      Authentication__Keycloak__Audience: ${KEYCLOAK_AUDIENCE:-mailgate-api}
+      Authentication__Keycloak__ClientId: ${KEYCLOAK_CLIENT_ID:-mailgate-admin}
+      Authentication__Keycloak__AdminRole: ${KEYCLOAK_ADMIN_ROLE:-mailgate-admin}
+      Authentication__Keycloak__RequireHttpsMetadata: ${KEYCLOAK_REQUIRE_HTTPS_METADATA:-false}
+      Cors__AllowedOrigins__0: ${CORS_ORIGIN_0:-http://localhost:8091}
+      Cors__AllowedOrigins__1: ${CORS_ORIGIN_1:-http://localhost:5173}
+      Smtp__Host: ${SMTP_HOST:-mailhog}
+      Smtp__Port: ${SMTP_PORT:-1025}
+      Smtp__UseTls: ${SMTP_USE_TLS:-false}
+      Smtp__UseSsl: ${SMTP_USE_SSL:-false}
+      Smtp__FromAddress: ${SMTP_FROM_ADDRESS:-noreply@mailgate.local}
+      Smtp__FromName: ${SMTP_FROM_NAME:-MailGate}
     extra_hosts:
       - "keycloak.localhost:host-gateway"
     volumes:
@@ -102,21 +109,41 @@ services:
       mailhog:
         condition: service_started
 
+  frontend:
+    build:
+      context: frontend
+      dockerfile: Dockerfile
+    container_name: mailgate-frontend
+    ports:
+      - "${FRONTEND_PORT:-8091}:80"
+    environment:
+      API_BASE_URL: ${API_BASE_URL:-http://localhost:8080}
+      KEYCLOAK_AUTHORITY: ${KEYCLOAK_AUTHORITY:-http://keycloak.localhost:8180/realms/mailgate}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-mailgate-admin}
+      KEYCLOAK_ADMIN_ROLE: ${KEYCLOAK_ADMIN_ROLE:-mailgate-admin}
+    depends_on:
+      api:
+        condition: service_started
+
   worker:
     build:
       context: .
       dockerfile: src/MailGate.Worker/Dockerfile
     container_name: mailgate-worker
     environment:
-      DOTNET_ENVIRONMENT: Development
-      ConnectionStrings__DefaultConnection: "Host=postgres;Database=mailgate;Username=mailgate;Password=mailgate"
+      DOTNET_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      ConnectionStrings__DefaultConnection: "Host=postgres;Database=${POSTGRES_DB:-mailgate};Username=${POSTGRES_USER:-mailgate};Password=${POSTGRES_PASSWORD:-mailgate}"
       MassTransit__Host: rabbitmq
       MassTransit__Port: "5672"
       MassTransit__VirtualHost: "/"
-      MassTransit__Username: mailgate
-      MassTransit__Password: mailgate
-      Smtp__Host: mailhog
-      Smtp__Port: "1025"
+      MassTransit__Username: ${RABBITMQ_USER:-mailgate}
+      MassTransit__Password: ${RABBITMQ_PASSWORD:-mailgate}
+      Smtp__Host: ${SMTP_HOST:-mailhog}
+      Smtp__Port: ${SMTP_PORT:-1025}
+      Smtp__UseTls: ${SMTP_USE_TLS:-false}
+      Smtp__UseSsl: ${SMTP_USE_SSL:-false}
+      Smtp__FromAddress: ${SMTP_FROM_ADDRESS:-noreply@mailgate.local}
+      Smtp__FromName: ${SMTP_FROM_NAME:-MailGate}
     depends_on:
       rabbitmq:
         condition: service_healthy

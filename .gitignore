@@ -3,6 +3,10 @@ bin/
 obj/
 out/
 
+# Frontend
+node_modules/
+frontend/dist/
+
 # .NET
 *.user
 *.suo
@@ -33,6 +37,10 @@ publish/
 # Logs
 *.log
 logs/
+
+# Environment / secrets
+.env
+!.env.example
 
 # User secrets
 **/secrets.json

@@ -37,6 +37,18 @@ var keycloakSwaggerClientId = keycloak["SwaggerClientId"] ?? "mailgate-admin";
 builder.Services.ConfigureHttpJsonOptions(o =>
     o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 
+const string frontendCorsPolicy = "Frontend";
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+    ?? ["http://localhost:5173"];
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(frontendCorsPolicy, policy => policy
+        .WithOrigins(allowedOrigins)
+        .AllowAnyHeader()
+        .AllowAnyMethod());
+});
+
 builder.Services.AddOpenApi(options =>
 {
     options.AddDocumentTransformer((document, _, _) =>
@@ -195,6 +207,12 @@ if (app.Environment.IsDevelopment())
     {
         options.Title = "MailGate API";
         options.Theme = ScalarTheme.Purple;
+        // Закрытый контур: без обращений к внешним сервисам (AI-чат, MCP, телеметрия, шрифты с CDN)
+        options
+            .DisableAgent()
+            .DisableMcp()
+            .DisableTelemetry()
+            .DisableDefaultFonts();
     });
 
     app.UseSwaggerUI(options =>
@@ -208,8 +226,7 @@ if (app.Environment.IsDevelopment())
     });
 }
 
-app.UseBlazorFrameworkFiles();
-app.UseStaticFiles();
+app.UseCors(frontendCorsPolicy);
 
 app.UseAuthentication();
 app.UseAuthorization();
@@ -226,8 +243,6 @@ app.MapHealthChecks("/healthz/ready", new Microsoft.AspNetCore.Diagnostics.Healt
 {
     Predicate = check => check.Tags.Contains("ready")
 });
-
-app.MapFallbackToFile("index.html");
 
 app.Run();
 

@@ -6,7 +6,7 @@
 
 MailGate использует Keycloak как OpenID Connect provider:
 
-- **Admin UI**: Blazor WebAssembly, Authorization Code Flow + PKCE.
+- **Admin UI**: React SPA, Authorization Code Flow + PKCE.
 - **MailGate API**: JWT Bearer validation.
 - **Внешние системы**: client credentials flow через отдельный confidential client.
 - **Решение о доступе**: роль `mailgate-admin`.
@@ -65,7 +65,7 @@ https://sso.company.local/realms/mailgate
 
 ## Client: Admin UI
 
-Клиент для Blazor WebAssembly.
+Клиент для React SPA (frontend/).
 
 Создайте client:
 
@@ -80,24 +80,25 @@ https://sso.company.local/realms/mailgate
 - **Service accounts**: `Off`
 - **PKCE**: `S256`
 
-Настройте URLs под реальный адрес MailGate Admin UI:
+Настройте URLs под реальный адрес фронтенда MailGate (SPA живёт на отдельном origin от API):
 
 ```text
-Root URL:              https://<mailgate-host>
-Home URL:              https://<mailgate-host>/
-Valid redirect URIs:   https://<mailgate-host>/authentication/login-callback
-                       https://<mailgate-host>/swagger/oauth2-redirect.html
-Valid post logout URIs:https://<mailgate-host>/authentication/logout-callback
-Web origins:           https://<mailgate-host>
+Root URL:              https://<frontend-host>
+Home URL:              https://<frontend-host>/
+Valid redirect URIs:   https://<frontend-host>/*
+                       https://<api-host>/swagger/oauth2-redirect.html
+Valid post logout URIs:https://<frontend-host>/*
+Web origins:           https://<frontend-host>
+                       https://<api-host>
 ```
 
 Для локального Docker-стека это:
 
 ```text
-http://localhost:8080/authentication/login-callback
+http://localhost:8091/*          (frontend в Docker)
+http://localhost:5173/*          (Vite dev server)
 http://localhost:8080/swagger/oauth2-redirect.html
-http://localhost:8080/authentication/logout-callback
-http://localhost:8080
+Web origins: http://localhost:8091, http://localhost:5173, http://localhost:8080
 ```
 
 ## Mappers для Admin UI
@@ -250,17 +251,15 @@ Authentication__Keycloak__RequireHttpsMetadata=true
 
 ## Настройки Admin UI
 
-Blazor WASM читает публичные OIDC-настройки из `wwwroot/appsettings.json`:
+React SPA читает публичные OIDC-настройки из `config.json` (в dev — `frontend/public/config.json`, в Docker генерируется из env-переменных):
 
 ```json
 {
-  "Oidc": {
-    "Authority": "https://<keycloak-host>/realms/mailgate",
-    "ClientId": "mailgate-admin",
-    "ResponseType": "code",
-    "DefaultScopes": [
-      "openid"
-    ]
+  "apiBaseUrl": "https://<api-host>",
+  "keycloak": {
+    "authority": "https://<keycloak-host>/realms/mailgate",
+    "clientId": "mailgate-admin",
+    "adminRole": "mailgate-admin"
   }
 }
 ```

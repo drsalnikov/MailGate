@@ -29,7 +29,7 @@
                                               ┌─────────────┼────────────────┐
                                               │             │                │
                                      ┌────────▼───┐  ┌──────▼─────┐  ┌──────▼─────┐
-                                     │SmtpChannel │  │ Telegram   │  │  Teams     │
+                                     │SmtpChannel │  │ IvaConnect │  │   Other    │
                                      │ (MailKit)  │  │  (future)  │  │  (future)  │
                                      └────────────┘  └────────────┘  └────────────┘
 ```
@@ -39,15 +39,16 @@
 ```
 MailGate/
 ├── src/
-│   ├── MailGate.Api/             # REST API, админ-эндпоинты, хостинг Blazor WASM
+│   ├── MailGate.Api/             # REST API, админ-эндпоинты
 │   │   └── Dockerfile
 │   ├── MailGate.Worker/          # MassTransit Consumer, ChannelRouter
 │   │   └── Dockerfile
-│   ├── MailGate.Admin/           # Blazor WebAssembly UI (MudBlazor)
-│   ├── MailGate.Contracts/       # DTO, общие между API и Admin UI
+│   ├── MailGate.Contracts/       # DTO админ-эндпоинтов API
 │   ├── MailGate.Core/            # Доменные модели, сущности, интерфейсы
 │   ├── MailGate.Channels.Smtp/   # SMTP/Exchange провайдер (MailKit + OAuth2)
 │   └── MailGate.Infrastructure/  # MassTransit, EF Core, PostgreSQL, Data Protection
+├── frontend/                     # React + Ant Design админка (Vite, TypeScript)
+│   └── Dockerfile                # node build → nginx статика
 ├── tests/
 │   ├── MailGate.Api.Tests/
 │   ├── MailGate.Worker.Tests/
@@ -67,7 +68,10 @@ MailGate/
 
 ### 1. Запустить весь стек
 
+Все настройки (порты, учётные данные, URL Keycloak) можно переопределить через `.env` — шаблон со значениями по умолчанию лежит в [`.env.example`](.env.example):
+
 ```bash
+cp .env.example .env   # опционально: без .env используются значения по умолчанию
 docker compose up --build
 ```
 
@@ -75,7 +79,7 @@ docker compose up --build
 
 | Сервис | URL | Описание |
 |--------|-----|----------|
-| **Admin UI** | http://localhost:8080 | Blazor WASM админка (рассылки, получатели, SMTP) |
+| **Admin UI** | http://localhost:8091 | React + Ant Design админка (рассылки, получатели, SMTP) |
 | **API** | http://localhost:8080/api/... | REST API |
 | **Swagger UI** | http://localhost:8080/swagger | Интерактивная документация |
 | **Scalar UI** | http://localhost:8080/scalar/v1 | Альтернативный API Reference |
@@ -195,10 +199,10 @@ dotnet run --project src/MailGate.Api --urls "http://localhost:5100"
 
 ---
 
-## Admin UI (Blazor WebAssembly)
+## Admin UI (React + Ant Design)
 
-Админка хостится самим API по корневому пути. Откройте http://localhost:8080/.
-Доступ к рабочим страницам защищён SSO через Keycloak OpenID Connect (Authorization Code + PKCE). В локальном Docker-стеке realm `mailgate` импортируется автоматически; тестовый пользователь: `mailgate-admin` / `mailgate`.
+Админка — отдельное SPA (`frontend/`, Vite + React + TypeScript + Ant Design), раздаётся nginx-контейнером на своём origin. В Docker-стеке откройте http://localhost:8091/.
+Доступ защищён SSO через Keycloak OpenID Connect (Authorization Code + PKCE). В локальном Docker-стеке realm `mailgate` импортируется автоматически; тестовый пользователь: `mailgate-admin` / `mailgate`.
 
 | Страница | URL | Назначение |
 |----------|-----|------------|
@@ -206,11 +210,25 @@ dotnet run --project src/MailGate.Api --urls "http://localhost:5100"
 | Рассылки | `/notifications` | Журнал отправок с фильтрами и ретраями |
 | Новая рассылка | `/notifications/new` | Ручная отправка из UI |
 | Получатели | `/recipients` | Адресная книга (ФИО + email, CRUD) |
+| Группы | `/recipient-groups` | Группы получателей (CRUD) |
+| Системы | `/systems` | Системы-подписки (CRUD) |
 | Настройки SMTP | `/smtp` | Эффективные настройки, переопределение из БД, тест подключения |
+
+### Локальная разработка фронтенда
+
+```bash
+cd frontend
+npm install
+npm run dev   # http://localhost:5173, API берётся из public/config.json
+```
+
+Runtime-конфигурация фронтенда (URL API, Keycloak) читается из `config.json`: в dev — `frontend/public/config.json`, в Docker генерируется entrypoint-скриптом из переменных окружения `API_BASE_URL`, `KEYCLOAK_AUTHORITY`, `KEYCLOAK_CLIENT_ID`, `KEYCLOAK_ADMIN_ROLE`.
+
+Так как фронтенд живёт на отдельном origin, API отдаёт CORS для origin'ов из настройки `Cors:AllowedOrigins` (`appsettings.json` / env `Cors__AllowedOrigins__N`).
 
 ### SSO / Авторизация
 
-- Blazor WASM перенаправляет пользователя в Keycloak (`http://keycloak.localhost:8180/realms/mailgate`) и получает access token через Authorization Code + PKCE.
+- SPA перенаправляет пользователя в Keycloak (`http://keycloak.localhost:8180/realms/mailgate`) и получает access token через Authorization Code + PKCE.
 - Запросы UI к `/api/admin/*` отправляются с `Authorization: Bearer ...`.
 - API валидирует JWT, audience `mailgate-api`, issuer Keycloak и роль `mailgate-admin`.
 - `/api/admin/recipients`, `/api/admin/notifications`, `/api/admin/smtp` требуют авторизацию.
@@ -380,7 +398,7 @@ API проверяет JWT Bearer по секции `Authentication:Keycloak`:
 }
 ```
 
-Blazor WASM читает публичные OIDC-настройки из `src/MailGate.Admin/wwwroot/appsettings.json`. Там нельзя хранить client secret.
+SPA-админка читает публичные OIDC-настройки из `config.json` (см. раздел Admin UI). Там нельзя хранить client secret.
 
 ---
 
@@ -396,6 +414,7 @@ Blazor WASM читает публичные OIDC-настройки из `src/Ma
 | ORM | EF Core 10 + Npgsql (PostgreSQL) |
 | Валидация | FluentValidation 11 |
 | OpenAPI UI | Scalar + Swagger UI (Swashbuckle) |
+| Admin UI | React 19 + Ant Design + Vite + TanStack Query |
 | Контейнеризация | Docker / Docker Compose |
 | Тесты | xUnit + NSubstitute + Testcontainers |
 | SMTP dev-сервер | MailHog |

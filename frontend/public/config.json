@@ -1,0 +1,8 @@
+{
+  "apiBaseUrl": "http://localhost:5260",
+  "keycloak": {
+    "authority": "http://keycloak.localhost:8180/realms/mailgate",
+    "clientId": "mailgate-admin",
+    "adminRole": "mailgate-admin"
+  }
+}

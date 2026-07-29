@@ -1,0 +1,68 @@
+# Пример конфигурации внешнего nginx для MailGate в закрытом контуре.
+#
+# TLS терминируется здесь (сертификаты от внутреннего УЦ),
+# контейнеры внутри работают по HTTP.
+#
+# Замените:
+#   mailgate.example.local  — DNS-алиас админки и API
+#   keycloak.example.local  — DNS-алиас Keycloak
+#   127.0.0.1               — адрес docker-хоста, если nginx стоит на другой машине
+#
+# Схема: фронтенд и API отдаются с ОДНОГО имени (same-origin),
+# поэтому CORS не требуется. Keycloak — на отдельном имени.
+
+# --- Админка + API ---
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name mailgate.example.local;
+
+    ssl_certificate     /etc/nginx/certs/mailgate.example.local.crt;
+    ssl_certificate_key /etc/nginx/certs/mailgate.example.local.key;
+
+    # REST API, health-эндпоинты и OpenAPI/Swagger/Scalar → контейнер api (порт 8080)
+    location ~ ^/(api|healthz|openapi|swagger|scalar)(/|$) {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # SPA-фронтенд → контейнер frontend (порт 8091)
+    location / {
+        proxy_pass http://127.0.0.1:8091;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# --- Keycloak ---
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name keycloak.example.local;
+
+    ssl_certificate     /etc/nginx/certs/keycloak.example.local.crt;
+    ssl_certificate_key /etc/nginx/certs/keycloak.example.local.key;
+
+    location / {
+        # Контейнер keycloak (порт 8180)
+        proxy_pass http://127.0.0.1:8180;
+        # Обязательные заголовки: Keycloak работает за прокси (KC_PROXY_HEADERS=xforwarded)
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+        proxy_buffer_size 64k;
+        proxy_buffers 8 64k;
+    }
+}
+
+# --- Редирект HTTP → HTTPS ---
+server {
+    listen 80;
+    server_name mailgate.example.local keycloak.example.local;
+    return 301 https://$host$request_uri;
+}

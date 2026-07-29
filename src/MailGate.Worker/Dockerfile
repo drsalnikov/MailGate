@@ -1,8 +1,16 @@
-FROM mcr.microsoft.com/dotnet/runtime:10.0 AS base
+FROM registry.red-soft.ru/ubi8/ubi-minimal:8.0.2-260714 AS base
 WORKDIR /app
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+RUN dnf makecache \
+    && dnf install -y dotnet-runtime-10.0 \
+    && dnf clean all
+
+FROM registry.red-soft.ru/ubi8/ubi:8.0.2-260714 AS build
 WORKDIR /src
+
+RUN dnf makecache \
+    && dnf install -y dotnet-sdk-10.0 \
+    && dnf clean all
 
 COPY ["src/MailGate.Worker/MailGate.Worker.csproj",                   "src/MailGate.Worker/"]
 COPY ["src/MailGate.Core/MailGate.Core.csproj",                       "src/MailGate.Core/"]
