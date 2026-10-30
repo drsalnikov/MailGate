@@ -8,7 +8,7 @@ namespace MailGate.Infrastructure.Services;
 
 /// <summary>
 /// SMTP settings provider that merges appsettings defaults with the optional database override.
-/// Database values take precedence when present. Results are cached in memory for 30 seconds.
+/// Database values take precedence when present. Results are cached in memory for Smtp:SettingsCacheSeconds (default 30).
 /// </summary>
 public sealed class DbSmtpSettingsProvider(
     IServiceScopeFactory scopeFactory,
@@ -16,7 +16,6 @@ public sealed class DbSmtpSettingsProvider(
     IMemoryCache cache) : ISmtpSettingsProvider
 {
     private const string CacheKey = "MailGate.Smtp.EffectiveOptions";
-    private static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(30);
 
     public async Task<SmtpOptions> GetEffectiveAsync(CancellationToken cancellationToken = default)
     {
@@ -24,7 +23,10 @@ public sealed class DbSmtpSettingsProvider(
             return cached;
 
         var merged = await LoadAsync(cancellationToken);
-        cache.Set(CacheKey, merged, CacheTtl);
+        var seconds = appSettings.CurrentValue.SettingsCacheSeconds;
+        if (seconds <= 0)
+            throw new InvalidOperationException("Smtp:SettingsCacheSeconds must be greater than zero.");
+        cache.Set(CacheKey, merged, TimeSpan.FromSeconds(seconds));
         return merged;
     }
 
@@ -49,6 +51,7 @@ public sealed class DbSmtpSettingsProvider(
             Port = entity.Port,
             UseSsl = entity.UseSsl,
             UseTls = entity.UseTls,
+            CheckCertificateRevocation = entity.CheckCertificateRevocation,
             FromAddress = entity.FromAddress,
             FromName = entity.FromName,
             Username = entity.Username ?? fromSettings.Username,
@@ -75,6 +78,7 @@ public sealed class DbSmtpSettingsProvider(
         Port = src.Port,
         UseSsl = src.UseSsl,
         UseTls = src.UseTls,
+        CheckCertificateRevocation = src.CheckCertificateRevocation,
         FromAddress = src.FromAddress,
         FromName = src.FromName,
         Username = src.Username,

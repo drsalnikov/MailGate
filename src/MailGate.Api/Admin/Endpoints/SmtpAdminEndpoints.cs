@@ -35,7 +35,7 @@ public static class SmtpAdminEndpoints
         IOptionsMonitor<SmtpOptions> appSettings,
         CancellationToken cancellationToken)
     {
-        var dbConfig = await store.GetAsync(cancellationToken);
+        var dbConfig = await store.GetMetadataAsync(cancellationToken);
 
         if (dbConfig is null)
         {
@@ -46,7 +46,7 @@ public static class SmtpAdminEndpoints
                 s.OAuth2.SmtpUserPrincipalName);
 
             return TypedResults.Ok(new SmtpConfigurationDto(
-                s.Host, s.Port, s.UseSsl, s.UseTls, s.FromAddress, s.FromName,
+                s.Host, s.Port, s.UseSsl, s.UseTls, s.CheckCertificateRevocation, s.FromAddress, s.FromName,
                 s.Username, !string.IsNullOrEmpty(s.Password),
                 oauth, SmtpConfigurationSource.AppSettings, null));
         }
@@ -58,7 +58,7 @@ public static class SmtpAdminEndpoints
         SmtpConfigurationStore store,
         CancellationToken cancellationToken)
     {
-        var dbConfig = await store.GetAsync(cancellationToken);
+        var dbConfig = await store.GetMetadataAsync(cancellationToken);
         return dbConfig is null
             ? TypedResults.NotFound()
             : TypedResults.Ok(ToDto(dbConfig, SmtpConfigurationSource.Database));
@@ -81,6 +81,7 @@ public static class SmtpAdminEndpoints
             Port = dto.Port,
             UseSsl = dto.UseSsl,
             UseTls = dto.UseTls,
+            CheckCertificateRevocation = dto.CheckCertificateRevocation,
             FromAddress = dto.FromAddress.Trim(),
             FromName = dto.FromName.Trim(),
             Username = string.IsNullOrWhiteSpace(dto.Username) ? null : dto.Username.Trim(),
@@ -92,7 +93,7 @@ public static class SmtpAdminEndpoints
         await store.UpsertAsync(entity, dto.Password, dto.OAuth2?.ClientSecret, cancellationToken);
         provider?.Invalidate();
 
-        var saved = await store.GetAsync(cancellationToken);
+        var saved = await store.GetMetadataAsync(cancellationToken);
         return TypedResults.Ok(ToDto(saved!, SmtpConfigurationSource.Database));
     }
 
@@ -108,6 +109,7 @@ public static class SmtpAdminEndpoints
 
     private static async Task<Ok<SmtpTestResultDto>> TestConnectionAsync(
         UpdateSmtpConfigurationDto dto,
+        SmtpConfigurationStore store,
         IValidator<UpdateSmtpConfigurationDto> validator,
         IOptionsMonitor<SmtpOptions> appSettings,
         CancellationToken cancellationToken)
@@ -121,11 +123,28 @@ public static class SmtpAdminEndpoints
                 DurationMs: 0));
         }
 
-        var effective = BuildEffectiveOptions(dto, appSettings.CurrentValue);
         var sw = Stopwatch.StartNew();
         try
         {
+            var effective = BuildEffectiveOptions(dto, appSettings.CurrentValue);
+            var needsSavedSecret = dto.OAuth2 is null
+                ? string.IsNullOrEmpty(dto.Password)
+                : string.IsNullOrEmpty(dto.OAuth2.ClientSecret);
+            if (needsSavedSecret)
+            {
+                var saved = await store.GetMetadataAsync(cancellationToken);
+                if (saved is not null)
+                {
+                    if (dto.OAuth2 is null)
+                        effective.Password = store.DecryptPassword(saved) ?? effective.Password;
+                    else if (effective.OAuth2 is not null)
+                        effective.OAuth2.ClientSecret = store.DecryptOAuth2ClientSecret(saved) ?? effective.OAuth2.ClientSecret;
+                }
+            }
+            if (effective.OAuth2 is null && !string.IsNullOrWhiteSpace(effective.Username) && string.IsNullOrEmpty(effective.Password))
+                throw new InvalidOperationException("Указан SMTP-логин, но пароль отсутствует.");
             using var client = new SmtpClient();
+            client.CheckCertificateRevocation = effective.CheckCertificateRevocation;
             var secureSocketOptions = effective.UseSsl
                 ? SecureSocketOptions.SslOnConnect
                 : effective.UseTls
@@ -163,6 +182,7 @@ public static class SmtpAdminEndpoints
         Port = dto.Port,
         UseSsl = dto.UseSsl,
         UseTls = dto.UseTls,
+        CheckCertificateRevocation = dto.CheckCertificateRevocation,
         FromAddress = dto.FromAddress,
         FromName = dto.FromName,
         Username = dto.Username ?? fallback.Username,
@@ -176,9 +196,8 @@ public static class SmtpAdminEndpoints
         }
     };
 
-    private static SmtpConfigurationDto ToDto(SmtpConfigurationStore.DecryptedConfiguration dc, SmtpConfigurationSource source)
+    private static SmtpConfigurationDto ToDto(SmtpConfiguration e, SmtpConfigurationSource source)
     {
-        var e = dc.Entity;
         SmtpOAuth2Dto? oauth = string.IsNullOrWhiteSpace(e.OAuth2TenantId) ? null : new SmtpOAuth2Dto(
             e.OAuth2TenantId!,
             e.OAuth2ClientId ?? string.Empty,
@@ -186,7 +205,7 @@ public static class SmtpAdminEndpoints
             e.OAuth2SmtpUserPrincipalName ?? string.Empty);
 
         return new SmtpConfigurationDto(
-            e.Host, e.Port, e.UseSsl, e.UseTls, e.FromAddress, e.FromName,
+            e.Host, e.Port, e.UseSsl, e.UseTls, e.CheckCertificateRevocation, e.FromAddress, e.FromName,
             e.Username, !string.IsNullOrEmpty(e.EncryptedPassword),
             oauth, source, e.UpdatedAt);
     }

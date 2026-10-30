@@ -1,0 +1,16 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/src/">
+    <Project Path="MailGate.Core/MailGate.Core.csproj" />
+    <Project Path="MailGate.Channels.Smtp/MailGate.Channels.Smtp.csproj" />
+    <Project Path="MailGate.Infrastructure/MailGate.Infrastructure.csproj" />
+    <Project Path="MailGate.Worker/MailGate.Worker.csproj" />
+    <Project Path="MailGate.Api/MailGate.Api.csproj" />
+    <Project Path="MailGate.Contracts/MailGate.Contracts.csproj" />
+  </Folder>
+  <Project Path="../tests/MailGate.TemplateChecks/MailGate.TemplateChecks.csproj" />
+</Solution>

@@ -1,0 +1,14 @@
+.git/
+.env
+.env.*
+**/.npmrc
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/
+**/publish/
+**/TestResults/
+**/*.pfx
+**/*.key
+**/*.tsbuildinfo
+**/.DS_Store

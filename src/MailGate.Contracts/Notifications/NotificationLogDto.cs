@@ -35,6 +35,9 @@ public sealed record NotificationLogDetailsDto(
 
 public sealed class SendNotificationFromAdminDto
 {
+    public MailGate.Contracts.Templates.EmailTemplateDefinition? TemplateDefinition { get; set; }
+    public Guid? TemplateId { get; set; }
+    public Guid? TemplateRevision { get; set; }
     public ChannelType Channel { get; set; } = ChannelType.Smtp;
     public IReadOnlyList<Guid> RecipientIds { get; set; } = [];
     public IReadOnlyList<Guid> RecipientGroupIds { get; set; } = [];

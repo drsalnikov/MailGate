@@ -8,6 +8,8 @@ public sealed class UpdateSmtpConfigurationValidator : AbstractValidator<UpdateS
     public UpdateSmtpConfigurationValidator()
     {
         RuleFor(x => x.Host).NotEmpty().MaximumLength(256);
+        RuleFor(x => x.UseSsl).Must((dto, useSsl) => !useSsl || !dto.UseTls)
+            .WithMessage("Выберите один режим: STARTTLS или SSL при подключении.");
         RuleFor(x => x.Port).InclusiveBetween(1, 65535);
         RuleFor(x => x.FromAddress).NotEmpty().EmailAddress().MaximumLength(320);
         RuleFor(x => x.FromName).NotEmpty().MaximumLength(200);

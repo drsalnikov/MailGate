@@ -1,5 +1,16 @@
 # MailGate — Notification Microservice
 
+## Доступ по группе Keycloak
+
+MailGate проверяет точное совпадение пути группы в `groups` access token. Роль администратора больше не используется для предоставления доступа. Пустая настройка группы запрещает доступ всем пользователям.
+
+В новом клиенте настройте mapper **Group Membership**: Token Claim Name — `groups`, Full group path — On, Add to access token — On. Добавьте Audience mapper с audience `mailgate-api` в access token.
+
+В корневом `.env` задайте `KEYCLOAK_ADMIN_GROUP=/OtherApp/Administrators` (замените на фактический путь), `KEYCLOAK_AUTHORITY`, `KEYCLOAK_CLIENT_ID` и `KEYCLOAK_AUDIENCE`. Значение группы должно точно совпадать с токеном, включая регистр. Для локального запуска API настройка называется `Authentication:Keycloak:AdminGroup`, а фронтенда — `keycloak.adminGroup` в `public/config.json`.
+
+Пересоберите: `docker compose up -d --build api frontend`, затем выйдите и войдите снова. Проверьте доступ участником группы и пользователем без неё: последнему защищённый API должен возвращать 403.
+
+
 Микросервис на **.NET 10**, который принимает запросы на рассылку уведомлений от сторонних систем через REST API и доставляет их через подключаемые провайдеры каналов связи (SMTP/Exchange, мессенджеры и др.).
 
 ## Архитектура
@@ -38,7 +49,12 @@
 
 ```
 MailGate/
+├── .dockerignore                # Исключения контекста API/Worker
+├── crt/                         # Публичные корпоративные УЦ
 ├── src/
+│   ├── MailGate.sln              # Решение .NET
+│   ├── MailGate.slnx             # То же решение в XML-формате
+│   ├── NuGet.Config             # Источники NuGet для сборки
 │   ├── MailGate.Api/             # REST API, админ-эндпоинты
 │   │   └── Dockerfile
 │   ├── MailGate.Worker/          # MassTransit Consumer, ChannelRouter
@@ -46,21 +62,47 @@ MailGate/
 │   ├── MailGate.Contracts/       # DTO админ-эндпоинтов API
 │   ├── MailGate.Core/            # Доменные модели, сущности, интерфейсы
 │   ├── MailGate.Channels.Smtp/   # SMTP/Exchange провайдер (MailKit + OAuth2)
-│   └── MailGate.Infrastructure/  # MassTransit, EF Core, PostgreSQL, Data Protection
-├── frontend/                     # React + Ant Design админка (Vite, TypeScript)
-│   └── Dockerfile                # node build → nginx статика
-├── tests/
-│   ├── MailGate.Api.Tests/
-│   ├── MailGate.Worker.Tests/
-│   └── MailGate.Channels.Smtp.Tests/
-├── docker-compose.yml            # Полный стек: API + Worker + RabbitMQ + PostgreSQL + MailHog
-├── .dockerignore
-└── MailGate.sln
+│   ├── MailGate.Infrastructure/  # MassTransit, EF Core, PostgreSQL, Data Protection
+│   └── MailGate.Frontend/        # React + Ant Design админка (Vite, TypeScript)
+│       └── Dockerfile            # node build → nginx статика
+└── docker-compose.yml            # Полный стек: API + Worker + RabbitMQ + PostgreSQL + MailHog
 ```
 
 ---
 
+Практические настройки SMTP, key ring, сертификатов, npm, миграций и pipeline: [config/operations.md](config/operations.md).
+
+## Шаблоны писем
+
+В меню «Рассылка → Шаблоны писем» доступен блочный конструктор. На `/notifications/new` можно выбрать шаблон, ввести основной текст и увидеть серверный предпросмотр. [Настройка, API и развёртывание](config/email-templates.md).
+
 ## Быстрый старт
+
+### Локальный Docker Desktop
+
+Из корня репозитория запустите вариант на официальных .NET-образах:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.local.yml ps
+```
+
+Frontend: http://localhost:8091, API: http://localhost:8080, MailHog: http://localhost:8025. Локальный Keycloak: http://keycloak.localhost:8181, realm `mailgate`. Тестовый пользователь `mailgate-admin` и его пароль заданы в `config/keycloak/mailgate-local-realm.json`; он входит в `/MailGateAdmins`. Второй тестовый пользователь не имеет административного доступа. Учётные записи и пароли этого стенда предназначены только для разработки.
+
+Override задаёт локальную группу и authority для API/frontend; корпоративные Dockerfile и настройки не заменяются. Если порты заняты или `.env` содержит настройки другого окружения, проверьте их перед запуском. Worker применяет миграции при старте. Не удаляйте PostgreSQL и общий volume ключей при обычном обновлении.
+
+Полная инструкция ручного переноса шаблонов, миграций и конструкторов: [artifacts/mailgate-templates-full-instructions.md](artifacts/mailgate-templates-full-instructions.md).
+
+### Сборка .NET
+
+Команды из корня репозитория (.NET SDK 10):
+
+```bash
+dotnet restore src/MailGate.sln --configfile src/NuGet.Config
+dotnet build src/MailGate.sln --no-restore
+```
+
+Для XML-формата решения замените `MailGate.sln` на `MailGate.slnx`. При запуске из `src` указывайте имя решения явно, поскольку в каталоге находятся оба формата. Docker-сборка API и Worker использует контекст корня репозитория и тот же `NuGet.Config`. Для закрытого контура замените источник в этом файле на внутренний NuGet-сервер.
 
 ### Требования
 
@@ -201,7 +243,7 @@ dotnet run --project src/MailGate.Api --urls "http://localhost:5100"
 
 ## Admin UI (React + Ant Design)
 
-Админка — отдельное SPA (`frontend/`, Vite + React + TypeScript + Ant Design), раздаётся nginx-контейнером на своём origin. В Docker-стеке откройте http://localhost:8091/.
+Админка — отдельное SPA (`src/MailGate.Frontend/`, Vite + React + TypeScript + Ant Design), раздаётся nginx-контейнером на своём origin. В Docker-стеке откройте http://localhost:8091/.
 Доступ защищён SSO через Keycloak OpenID Connect (Authorization Code + PKCE). В локальном Docker-стеке realm `mailgate` импортируется автоматически; тестовый пользователь: `mailgate-admin` / `mailgate`.
 
 | Страница | URL | Назначение |
@@ -217,12 +259,12 @@ dotnet run --project src/MailGate.Api --urls "http://localhost:5100"
 ### Локальная разработка фронтенда
 
 ```bash
-cd frontend
+cd src/MailGate.Frontend
 npm install
 npm run dev   # http://localhost:5173, API берётся из public/config.json
 ```
 
-Runtime-конфигурация фронтенда (URL API, Keycloak) читается из `config.json`: в dev — `frontend/public/config.json`, в Docker генерируется entrypoint-скриптом из переменных окружения `API_BASE_URL`, `KEYCLOAK_AUTHORITY`, `KEYCLOAK_CLIENT_ID`, `KEYCLOAK_ADMIN_ROLE`.
+Runtime-конфигурация фронтенда (URL API, Keycloak) читается из `config.json`: в dev — `src/MailGate.Frontend/public/config.json`, в Docker генерируется entrypoint-скриптом из переменных окружения `API_BASE_URL`, `KEYCLOAK_AUTHORITY`, `KEYCLOAK_CLIENT_ID`, `KEYCLOAK_ADMIN_GROUP`.
 
 Так как фронтенд живёт на отдельном origin, API отдаёт CORS для origin'ов из настройки `Cors:AllowedOrigins` (`appsettings.json` / env `Cors__AllowedOrigins__N`).
 
@@ -391,7 +433,7 @@ API проверяет JWT Bearer по секции `Authentication:Keycloak`:
       "Authority": "http://keycloak.localhost:8180/realms/mailgate",
       "Audience": "mailgate-api",
       "ClientId": "mailgate-admin",
-      "AdminRole": "mailgate-admin",
+      "AdminGroup": "",
       "RequireHttpsMetadata": false
     }
   }

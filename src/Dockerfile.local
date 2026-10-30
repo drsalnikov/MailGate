@@ -1,0 +1,14 @@
+# Local development build; corporate deployment keeps its existing Dockerfiles.
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+COPY src/ ./
+ARG PROJECT
+RUN dotnet publish "MailGate.${PROJECT}/MailGate.${PROJECT}.csproj" -c Release -o /app/publish
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
+WORKDIR /app
+ENV ASPNETCORE_HTTP_PORTS=8080
+COPY --from=build /app/publish ./
+ARG PROJECT
+ENV MAILGATE_PROJECT=${PROJECT}
+ENTRYPOINT ["/bin/sh", "-c", "exec dotnet MailGate.${MAILGATE_PROJECT}.dll"]

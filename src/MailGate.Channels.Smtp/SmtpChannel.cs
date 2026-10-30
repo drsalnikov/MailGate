@@ -8,6 +8,7 @@ using MailKit.Security;
 using Microsoft.Extensions.Logging;
 using MimeKit;
 using MimeKit.Text;
+using System.Text.RegularExpressions;
 
 namespace MailGate.Channels.Smtp;
 
@@ -22,13 +23,18 @@ public sealed class SmtpChannel(
         if (message.Recipients.Count == 0)
             return ChannelResult.Skip("No recipients.");
 
-        var options = await settingsProvider.GetEffectiveAsync(cancellationToken);
-
         try
         {
+            var options = await settingsProvider.GetEffectiveAsync(cancellationToken);
+            logger.LogInformation(
+                "SMTP credentials: UsernameConfigured={UsernameConfigured}, PasswordAvailable={PasswordAvailable}, OAuth2Configured={OAuth2Configured}",
+                !string.IsNullOrWhiteSpace(options.Username), !string.IsNullOrEmpty(options.Password), options.OAuth2 is not null);
+            if (options.OAuth2 is null && !string.IsNullOrWhiteSpace(options.Username) && string.IsNullOrEmpty(options.Password))
+                throw new InvalidOperationException("Указан SMTP-логин, но пароль отсутствует.");
             var mimeMessage = BuildMimeMessage(message, options);
 
             using var client = new SmtpClient();
+            client.CheckCertificateRevocation = options.CheckCertificateRevocation;
 
             var secureSocketOptions = options.UseSsl
                 ? SecureSocketOptions.SslOnConnect
@@ -51,6 +57,8 @@ public sealed class SmtpChannel(
                 await client.AuthenticateAsync(options.Username, options.Password, cancellationToken);
             }
 
+            logger.LogInformation("SMTP connection: IsSecure={IsSecure}, IsAuthenticated={IsAuthenticated}",
+                client.IsSecure, client.IsAuthenticated);
             await client.SendAsync(mimeMessage, cancellationToken);
             await client.DisconnectAsync(quit: true, cancellationToken);
 
@@ -86,7 +94,27 @@ public sealed class SmtpChannel(
             _ => TextFormat.Plain
         };
 
-        mime.Body = new TextPart(textFormat) { Text = message.Body };
+        if (message.BodyFormat == BodyFormat.Html)
+        {
+            var builder = new BodyBuilder();
+            var totalBytes = 0;
+            builder.HtmlBody = Regex.Replace(message.Body,
+                "src=\"(data:image/(?:png|jpeg|gif);base64,[A-Za-z0-9+/=]+)\"",
+                match =>
+                {
+                    if (!EmbeddedEmailImage.TryRead(match.Groups[1].Value, out var mimeType, out var bytes))
+                        throw new InvalidOperationException("Некорректное вложенное изображение.");
+                    totalBytes += bytes.Length;
+                    if (totalBytes > EmbeddedEmailImage.MaxTotalBytes)
+                        throw new InvalidOperationException("Общий размер изображений превышает 512 КБ.");
+                    var resource = builder.LinkedResources.Add("image", bytes, ContentType.Parse(mimeType));
+                    resource.ContentId = MimeKit.Utils.MimeUtils.GenerateMessageId();
+                    return $"src=\"cid:{resource.ContentId}\"";
+                }, RegexOptions.CultureInvariant, TimeSpan.FromSeconds(5));
+            mime.Body = builder.ToMessageBody();
+        }
+        else
+            mime.Body = new TextPart(textFormat) { Text = message.Body };
 
         if (message.Priority == NotificationPriority.Critical || message.Priority == NotificationPriority.High)
             mime.Priority = MessagePriority.Urgent;

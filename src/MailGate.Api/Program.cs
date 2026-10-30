@@ -14,7 +14,6 @@ using MailGate.Contracts.Recipients;
 using MailGate.Contracts.Smtp;
 using MailGate.Contracts.Systems;
 using MailGate.Infrastructure.Extensions;
-using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.Extensions.DependencyInjection;
@@ -31,7 +30,7 @@ const string keycloakOAuthSecurityScheme = "Keycloak OAuth2";
 var keycloak = builder.Configuration.GetSection("Authentication:Keycloak");
 var keycloakAuthority = keycloak["Authority"] ?? "http://keycloak.localhost:8180/realms/mailgate";
 var keycloakAudience = keycloak["Audience"] ?? "mailgate-api";
-var keycloakAdminRole = keycloak["AdminRole"] ?? "mailgate-admin";
+var keycloakAdminGroup = keycloak["AdminGroup"] ?? "";
 var keycloakSwaggerClientId = keycloak["SwaggerClientId"] ?? "mailgate-admin";
 
 builder.Services.ConfigureHttpJsonOptions(o =>
@@ -149,24 +148,15 @@ builder.Services
             ValidIssuer = keycloakAuthority
         };
 
-        // IClaimsTransformation is not invoked automatically for JwtBearer without ASP.NET Core Identity.
-        options.Events = new JwtBearerEvents
-        {
-            OnTokenValidated = async context =>
-            {
-                var transform = context.HttpContext.RequestServices.GetRequiredService<IClaimsTransformation>();
-                context.Principal = await transform.TransformAsync(context.Principal!);
-            }
-        };
     });
 
-builder.Services.AddTransient<IClaimsTransformation, KeycloakRoleClaimsTransformation>();
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy(adminPolicy, policy =>
     {
         policy.RequireAuthenticatedUser();
-        policy.RequireRole(keycloakAdminRole);
+        policy.RequireAssertion(context =>
+            KeycloakGroupAccess.HasGroup(context.User, keycloakAdminGroup));
     });
 });
 
@@ -237,6 +227,7 @@ app.MapRecipientGroupsAdminEndpoints();
 app.MapSystemsAdminEndpoints();
 app.MapNotificationsAdminEndpoints();
 app.MapSmtpAdminEndpoints();
+app.MapEmailTemplatesEndpoints();
 
 app.MapHealthChecks("/healthz");
 app.MapHealthChecks("/healthz/ready", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions

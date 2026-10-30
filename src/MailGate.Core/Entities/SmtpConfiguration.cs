@@ -12,6 +12,7 @@ public sealed class SmtpConfiguration
     public int Port { get; set; } = 587;
     public bool UseSsl { get; set; }
     public bool UseTls { get; set; } = true;
+    public bool CheckCertificateRevocation { get; set; } = true;
     public string FromAddress { get; set; } = string.Empty;
     public string FromName { get; set; } = "MailGate";
     public string? Username { get; set; }

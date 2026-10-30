@@ -1,0 +1,12 @@
+services:
+  frontend:
+    build:
+      secrets:
+        - npmrc
+        - npm_token
+
+secrets:
+  npmrc:
+    file: ./src/MailGate.Frontend/.npmrc
+  npm_token:
+    environment: NPM_TOKEN

@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../src/MailGate.Api/Templates/EmailTemplateRenderer.cs" Link="EmailTemplateRenderer.cs" />
+    <Compile Include="../../src/MailGate.Contracts/Templates/EmailTemplateDto.cs" Link="EmailTemplateDto.cs" />
+    <Compile Include="../../src/MailGate.Core/Enums/BodyFormat.cs" Link="BodyFormat.cs" />
+    <Compile Include="../../src/MailGate.Core/Models/EmbeddedEmailImage.cs" Link="EmbeddedEmailImage.cs" />
+  </ItemGroup>
+</Project>

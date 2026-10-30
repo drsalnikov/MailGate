@@ -11,6 +11,7 @@ public sealed record SmtpConfigurationDto(
     int Port,
     bool UseSsl,
     bool UseTls,
+    bool CheckCertificateRevocation,
     string FromAddress,
     string FromName,
     string? Username,
@@ -31,6 +32,7 @@ public sealed class UpdateSmtpConfigurationDto
     public int Port { get; set; } = 587;
     public bool UseSsl { get; set; }
     public bool UseTls { get; set; } = true;
+    public bool CheckCertificateRevocation { get; set; } = true;
     public string FromAddress { get; set; } = string.Empty;
     public string FromName { get; set; } = string.Empty;
     public string? Username { get; set; }

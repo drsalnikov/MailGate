@@ -1,0 +1,12 @@
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/
+**/publish/
+**/TestResults/
+**/.vs/
+**/.idea/
+**/.DS_Store
+**/*.user
+**/*.suo
+**/*.tsbuildinfo

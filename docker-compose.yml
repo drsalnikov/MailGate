@@ -6,6 +6,7 @@ services:
       - "${RABBITMQ_PORT:-5672}:5672"
       - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
     environment:
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-/}
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-mailgate}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-mailgate}
     volumes:
@@ -58,7 +59,7 @@ services:
       # Доверять заголовкам X-Forwarded-* от реверс-прокси
       KC_PROXY_HEADERS: xforwarded
     volumes:
-      - ./config/keycloak:/opt/keycloak/data/import:ro
+      - ./config/keycloak/mailgate-realm.json:/opt/keycloak/data/import/mailgate-realm.json:ro
 
   api:
     build:
@@ -69,6 +70,8 @@ services:
       - "${API_HTTP_PORT:-8080}:8080"
       - "${API_HTTPS_PORT:-8443}:8443"
     environment:
+      DataProtection__KeysPath: /var/mailgate/keys
+      Smtp__SettingsCacheSeconds: ${SMTP_SETTINGS_CACHE_SECONDS:-30}
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
       ASPNETCORE_HTTP_PORTS: "8080"
       # HTTPS выключен по умолчанию; включается, если задать API_HTTPS_ENABLED=true
@@ -77,15 +80,16 @@ services:
       ASPNETCORE_Kestrel__Certificates__Default__Path: ${API_HTTPS_ENABLED:+${KESTREL_CERT_PATH:-/https/mailgate.pfx}}
       ASPNETCORE_Kestrel__Certificates__Default__Password: ${API_HTTPS_ENABLED:+${KESTREL_CERT_PASSWORD:-mailgate_dev}}
       ConnectionStrings__DefaultConnection: "Host=postgres;Database=${POSTGRES_DB:-mailgate};Username=${POSTGRES_USER:-mailgate};Password=${POSTGRES_PASSWORD:-mailgate}"
-      MassTransit__Host: rabbitmq
-      MassTransit__Port: "5672"
-      MassTransit__VirtualHost: "/"
+      MassTransit__Host: ${RABBITMQ_HOST:-rabbitmq}
+      MassTransit__Port: ${RABBITMQ_CONNECTION_PORT:-5672}
+      MassTransit__VirtualHost: ${RABBITMQ_VHOST:-/}
       MassTransit__Username: ${RABBITMQ_USER:-mailgate}
       MassTransit__Password: ${RABBITMQ_PASSWORD:-mailgate}
       Authentication__Keycloak__Authority: ${KEYCLOAK_AUTHORITY:-http://keycloak.localhost:8180/realms/mailgate}
       Authentication__Keycloak__Audience: ${KEYCLOAK_AUDIENCE:-mailgate-api}
       Authentication__Keycloak__ClientId: ${KEYCLOAK_CLIENT_ID:-mailgate-admin}
-      Authentication__Keycloak__AdminRole: ${KEYCLOAK_ADMIN_ROLE:-mailgate-admin}
+      Authentication__Keycloak__SwaggerClientId: ${KEYCLOAK_CLIENT_ID:-mailgate-admin}
+      Authentication__Keycloak__AdminGroup: ${KEYCLOAK_ADMIN_GROUP:-}
       Authentication__Keycloak__RequireHttpsMetadata: ${KEYCLOAK_REQUIRE_HTTPS_METADATA:-false}
       Cors__AllowedOrigins__0: ${CORS_ORIGIN_0:-http://localhost:8091}
       Cors__AllowedOrigins__1: ${CORS_ORIGIN_1:-http://localhost:5173}
@@ -99,6 +103,7 @@ services:
       - "keycloak.localhost:host-gateway"
     volumes:
       - ~/.aspnet/https:/https:ro
+      - data_protection_keys:/var/mailgate/keys
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -111,7 +116,7 @@ services:
 
   frontend:
     build:
-      context: frontend
+      context: src/MailGate.Frontend
       dockerfile: Dockerfile
     container_name: mailgate-frontend
     ports:
@@ -120,7 +125,7 @@ services:
       API_BASE_URL: ${API_BASE_URL:-http://localhost:8080}
       KEYCLOAK_AUTHORITY: ${KEYCLOAK_AUTHORITY:-http://keycloak.localhost:8180/realms/mailgate}
       KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-mailgate-admin}
-      KEYCLOAK_ADMIN_ROLE: ${KEYCLOAK_ADMIN_ROLE:-mailgate-admin}
+      KEYCLOAK_ADMIN_GROUP: ${KEYCLOAK_ADMIN_GROUP:-}
     depends_on:
       api:
         condition: service_started
@@ -130,12 +135,16 @@ services:
       context: .
       dockerfile: src/MailGate.Worker/Dockerfile
     container_name: mailgate-worker
+    volumes:
+      - data_protection_keys:/var/mailgate/keys
     environment:
+      DataProtection__KeysPath: /var/mailgate/keys
+      Smtp__SettingsCacheSeconds: ${SMTP_SETTINGS_CACHE_SECONDS:-30}
       DOTNET_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
       ConnectionStrings__DefaultConnection: "Host=postgres;Database=${POSTGRES_DB:-mailgate};Username=${POSTGRES_USER:-mailgate};Password=${POSTGRES_PASSWORD:-mailgate}"
-      MassTransit__Host: rabbitmq
-      MassTransit__Port: "5672"
-      MassTransit__VirtualHost: "/"
+      MassTransit__Host: ${RABBITMQ_HOST:-rabbitmq}
+      MassTransit__Port: ${RABBITMQ_CONNECTION_PORT:-5672}
+      MassTransit__VirtualHost: ${RABBITMQ_VHOST:-/}
       MassTransit__Username: ${RABBITMQ_USER:-mailgate}
       MassTransit__Password: ${RABBITMQ_PASSWORD:-mailgate}
       Smtp__Host: ${SMTP_HOST:-mailhog}
@@ -155,3 +164,4 @@ services:
 volumes:
   rabbitmq_data:
   postgres_data:
+  data_protection_keys:

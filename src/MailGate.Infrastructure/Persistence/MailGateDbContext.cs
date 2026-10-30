@@ -10,6 +10,7 @@ public sealed class MailGateDbContext(DbContextOptions<MailGateDbContext> option
     public DbSet<Recipient> Recipients => Set<Recipient>();
     public DbSet<RecipientGroup> RecipientGroups => Set<RecipientGroup>();
     public DbSet<NotificationSystem> Systems => Set<NotificationSystem>();
+    public DbSet<EmailTemplate> EmailTemplates => Set<EmailTemplate>();
     public DbSet<SmtpConfiguration> SmtpConfigurations => Set<SmtpConfiguration>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -104,9 +105,21 @@ public sealed class MailGateDbContext(DbContextOptions<MailGateDbContext> option
                     });
         });
 
+        modelBuilder.Entity<EmailTemplate>(e =>
+        {
+            e.ToTable("email_templates");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Name).IsRequired().HasMaxLength(200);
+            e.Property(x => x.DefinitionJson).IsRequired().HasColumnType("jsonb");
+            e.Property(x => x.Revision).IsConcurrencyToken();
+            e.HasIndex(x => x.UpdatedAt);
+        });
+
         modelBuilder.Entity<SmtpConfiguration>(e =>
         {
             e.ToTable("smtp_configurations");
+            e.Property(x => x.CheckCertificateRevocation).HasDefaultValue(true);
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).ValueGeneratedNever();
             e.Property(x => x.Host).IsRequired().HasMaxLength(256);

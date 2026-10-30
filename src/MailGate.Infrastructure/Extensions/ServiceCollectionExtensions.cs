@@ -29,7 +29,13 @@ public static class ServiceCollectionExtensions
                 npgsql.MigrationsAssembly(typeof(MailGateDbContext).Assembly.FullName)));
 
         services.AddMemoryCache();
-        services.AddDataProtection();
+        var keysPath = configuration["DataProtection:KeysPath"];
+        if (string.IsNullOrWhiteSpace(keysPath))
+            throw new InvalidOperationException("DataProtection:KeysPath must point to a persistent shared directory.");
+        Directory.CreateDirectory(keysPath);
+        services.AddDataProtection()
+            .SetApplicationName("MailGate")
+            .PersistKeysToFileSystem(new DirectoryInfo(keysPath));
         services.AddScoped<SmtpConfigurationStore>();
 
         var rmqOptions = configuration.GetSection(MassTransitOptions.SectionName).Get<MassTransitOptions>()

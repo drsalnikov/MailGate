@@ -1,0 +1,38 @@
+# Official .NET images for local Docker Desktop, without changing corporate builds.
+services:
+  api:
+    depends_on:
+      keycloak-local:
+        condition: service_started
+    environment:
+      Authentication__Keycloak__AdminGroup: /MailGateAdmins
+      Authentication__Keycloak__Authority: http://keycloak.localhost:8181/realms/mailgate
+    build:
+      context: .
+      dockerfile: src/Dockerfile.local
+      args:
+        PROJECT: Api
+  frontend:
+    environment:
+      KEYCLOAK_ADMIN_GROUP: /MailGateAdmins
+      KEYCLOAK_AUTHORITY: http://keycloak.localhost:8181/realms/mailgate
+  worker:
+    build:
+      context: .
+      dockerfile: src/Dockerfile.local
+      args:
+        PROJECT: Worker
+  keycloak-local:
+    image: quay.io/keycloak/keycloak:26.2
+    container_name: mailgate-keycloak-local
+    command: ["start-dev", "--import-realm"]
+    ports:
+      - "8181:8080"
+    environment:
+      KC_HOSTNAME: http://keycloak.localhost:8181
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: local-development-only
+    volumes:
+      - ./config/keycloak/mailgate-local-realm.json:/opt/keycloak/data/import/mailgate-realm.json:ro

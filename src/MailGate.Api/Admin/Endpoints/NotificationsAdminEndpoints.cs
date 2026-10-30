@@ -1,4 +1,6 @@
 using System.Text.Json;
+using MailGate.Api.Templates;
+using MailGate.Contracts.Templates;
 using FluentValidation;
 using MailGate.Contracts.Common;
 using MailGate.Contracts.Notifications;
@@ -28,6 +30,7 @@ public static class NotificationsAdminEndpoints
         group.MapGet("/", ListAsync).WithName("ListAdminNotifications");
         group.MapGet("/stats", StatsAsync).WithName("AdminNotificationStats");
         group.MapGet("/{id:guid}", GetAsync).WithName("GetAdminNotification");
+        group.MapPost("/preview", PreviewAsync);
         group.MapPost("/", SendAsync).WithName("AdminSendNotification");
         group.MapPost("/{id:guid}/retry", RetryAsync).WithName("AdminRetryNotification");
 
@@ -136,6 +139,12 @@ public static class NotificationsAdminEndpoints
             log.RetryOfMessageId));
     }
 
+    private static async Task<IResult> PreviewAsync(PreviewNotificationDto dto, MailGateDbContext db, CancellationToken ct)
+    {
+        try { return Results.Ok(NotificationComposer.Preview(await NotificationComposer.ComposeAsync(db, dto, ct))); }
+        catch (NotificationCompositionException ex) { return Results.ValidationProblem(new Dictionary<string, string[]> { ["Template"] = [ex.Message] }); }
+    }
+
     private static async Task<Results<Accepted<AcceptedNotificationDto>, ValidationProblem>> SendAsync(
         SendNotificationFromAdminDto dto,
         IValidator<SendNotificationFromAdminDto> validator,
@@ -147,6 +156,20 @@ public static class NotificationsAdminEndpoints
         var validation = await validator.ValidateAsync(dto, cancellationToken);
         if (!validation.IsValid)
             return TypedResults.ValidationProblem(validation.ToDictionary());
+
+        ComposedNotification composed;
+        try
+        {
+            composed = await NotificationComposer.ComposeAsync(db, new PreviewNotificationDto
+            {
+                TemplateId = dto.TemplateId, TemplateRevision = dto.TemplateRevision, TemplateDefinition = dto.TemplateDefinition,
+                Subject = dto.Subject, Body = dto.Body, BodyFormat = dto.BodyFormat
+            }, cancellationToken);
+        }
+        catch (NotificationCompositionException ex)
+        {
+            return TypedResults.ValidationProblem(new Dictionary<string, string[]> { ["Template"] = [ex.Message] });
+        }
 
         var emailsFromBook = dto.RecipientIds.Count == 0
             ? []
@@ -181,9 +204,9 @@ public static class NotificationsAdminEndpoints
         {
             Channel = dto.Channel,
             Recipients = allRecipients,
-            Subject = dto.Subject,
-            Body = dto.Body,
-            BodyFormat = dto.BodyFormat,
+            Subject = composed.Subject,
+            Body = composed.Body,
+            BodyFormat = composed.BodyFormat,
             Priority = dto.Priority,
             TraceId = httpContext.TraceIdentifier
         };

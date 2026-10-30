@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using MailGate.Core.Entities;
 using MailGate.Infrastructure.Persistence;
 using Microsoft.AspNetCore.DataProtection;
@@ -24,18 +25,25 @@ public sealed class SmtpConfigurationStore(
 
     public async Task<DecryptedConfiguration?> GetAsync(CancellationToken cancellationToken = default)
     {
-        var entity = await dbContext.SmtpConfigurations.AsNoTracking()
-            .OrderByDescending(x => x.UpdatedAt)
-            .FirstOrDefaultAsync(cancellationToken);
+        var entity = await GetMetadataAsync(cancellationToken);
 
         if (entity is null)
             return null;
 
-        var password = TryUnprotect(entity.EncryptedPassword);
-        var clientSecret = TryUnprotect(entity.OAuth2EncryptedClientSecret);
+        var oauthEnabled = !string.IsNullOrWhiteSpace(entity.OAuth2TenantId);
+        var password = oauthEnabled ? null : DecryptPassword(entity);
+        var clientSecret = oauthEnabled ? DecryptOAuth2ClientSecret(entity) : null;
 
         return new DecryptedConfiguration(entity, password, clientSecret);
     }
+
+    public Task<SmtpConfiguration?> GetMetadataAsync(CancellationToken cancellationToken = default) =>
+        dbContext.SmtpConfigurations.AsNoTracking()
+            .OrderByDescending(x => x.UpdatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+
+    public string? DecryptPassword(SmtpConfiguration entity) => TryUnprotect(entity.EncryptedPassword);
+    public string? DecryptOAuth2ClientSecret(SmtpConfiguration entity) => TryUnprotect(entity.OAuth2EncryptedClientSecret);
 
     public async Task UpsertAsync(
         SmtpConfiguration incoming,
@@ -60,6 +68,7 @@ public sealed class SmtpConfigurationStore(
             existing.Port = incoming.Port;
             existing.UseSsl = incoming.UseSsl;
             existing.UseTls = incoming.UseTls;
+            existing.CheckCertificateRevocation = incoming.CheckCertificateRevocation;
             existing.FromAddress = incoming.FromAddress;
             existing.FromName = incoming.FromName;
             existing.Username = incoming.Username;
@@ -92,9 +101,10 @@ public sealed class SmtpConfigurationStore(
         {
             return _protector.Unprotect(encrypted);
         }
-        catch
+        catch (CryptographicException ex)
         {
-            return null;
+            throw new InvalidOperationException(
+                "Не удалось расшифровать сохранённый SMTP-секрет. Проверьте общий key ring API и Worker или сохраните секрет заново.", ex);
         }
     }
 }

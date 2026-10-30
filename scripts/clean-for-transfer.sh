@@ -47,7 +47,8 @@ FILES_TO_DELETE=$(find "$ROOT" \
         -name "*.trx" -o \
         -name "*.coveragexml" -o \
         -name "*.user" -o \
-        -name "*.suo" \
+        -name "*.suo" -o \
+        -name "*.tsbuildinfo" \
     \) -print 2>/dev/null | sort)
 
 TOTAL_SIZE=0
