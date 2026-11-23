@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using MailGate.Core.Enums;
 using MailGate.Core.Entities;
 using MailGate.Infrastructure.Persistence;
 using Microsoft.AspNetCore.DataProtection;
@@ -30,6 +31,9 @@ public sealed class SmtpConfigurationStore(
         if (entity is null)
             return null;
 
+        if (entity.CredentialSource != SmtpCredentialSource.Legacy)
+            return new DecryptedConfiguration(entity, null, null);
+
         var oauthEnabled = !string.IsNullOrWhiteSpace(entity.OAuth2TenantId);
         var password = oauthEnabled ? null : DecryptPassword(entity);
         var clientSecret = oauthEnabled ? DecryptOAuth2ClientSecret(entity) : null;
@@ -54,8 +58,20 @@ public sealed class SmtpConfigurationStore(
         var existing = await dbContext.SmtpConfigurations
             .FirstOrDefaultAsync(cancellationToken);
 
-        incoming.EncryptedPassword = Protect(password) ?? existing?.EncryptedPassword;
-        incoming.OAuth2EncryptedClientSecret = Protect(oauth2ClientSecret) ?? existing?.OAuth2EncryptedClientSecret;
+        if (incoming.CredentialSource == SmtpCredentialSource.Legacy)
+        {
+            incoming.EncryptedPassword = Protect(password) ?? existing?.EncryptedPassword;
+            incoming.OAuth2EncryptedClientSecret = Protect(oauth2ClientSecret) ?? existing?.OAuth2EncryptedClientSecret;
+        }
+        else
+        {
+            incoming.Username = null;
+            incoming.EncryptedPassword = null;
+            incoming.OAuth2TenantId = null;
+            incoming.OAuth2ClientId = null;
+            incoming.OAuth2SmtpUserPrincipalName = null;
+            incoming.OAuth2EncryptedClientSecret = null;
+        }
         incoming.UpdatedAt = DateTimeOffset.UtcNow;
 
         if (existing is null)
@@ -64,6 +80,7 @@ public sealed class SmtpConfigurationStore(
         }
         else
         {
+            existing.CredentialSource = incoming.CredentialSource;
             existing.Host = incoming.Host;
             existing.Port = incoming.Port;
             existing.UseSsl = incoming.UseSsl;

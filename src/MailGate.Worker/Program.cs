@@ -6,7 +6,8 @@ using MailGate.Worker.Consumers;
 using MailGate.Worker.Routing;
 using Microsoft.EntityFrameworkCore;
 
-var builder = Host.CreateApplicationBuilder(args);
+var migrateOnly = args.Contains("--migrate-only", StringComparer.Ordinal);
+var builder = Host.CreateApplicationBuilder(args.Where(arg => arg != "--migrate-only").ToArray());
 
 builder.Services.AddInfrastructure(builder.Configuration, bus =>
 {
@@ -18,7 +19,7 @@ builder.Services.AddDbSmtpSettingsProvider();
 
 builder.Services.AddSingleton<IChannelRouter, ChannelRouter>();
 
-var host = builder.Build();
+using var host = builder.Build();
 
 using (var scope = host.Services.CreateScope())
 {
@@ -26,4 +27,5 @@ using (var scope = host.Services.CreateScope())
     await db.Database.MigrateAsync();
 }
 
-await host.RunAsync();
+if (!migrateOnly)
+    await host.RunAsync();

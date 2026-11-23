@@ -1,5 +1,9 @@
 # MailGate — Notification Microservice
 
+Полный перенос в закрытый контур: [пошаговая инструкция и ссылки на полные/дополнительные диффы](config/closed-network-transfer.md).
+
+Настройка SMTP из sidecar-файла, тестовый ручной режим и локальная работа без Vault: [config/smtp-sidecar.md](config/smtp-sidecar.md).
+
 ## Доступ по группе Keycloak
 
 MailGate проверяет точное совпадение пути группы в `groups` access token. Роль администратора больше не используется для предоставления доступа. Пустая настройка группы запрещает доступ всем пользователям.
@@ -76,6 +80,10 @@ MailGate/
 
 В меню «Рассылка → Шаблоны писем» доступен блочный конструктор. На `/notifications/new` можно выбрать шаблон, ввести основной текст и увидеть серверный предпросмотр. [Настройка, API и развёртывание](config/email-templates.md).
 
+## GitLab CI/CD
+
+В `.gitlab-ci.yml` подготовлены проверки, сборка трёх образов и автоматический deploy ветки `develop` на dev через SSH/Docker Compose. Требуется Linux Shell Runner с тегом `mailgate`. До запуска заполните GitLab Variables и проверьте серверную конфигурацию: [пошаговая настройка и объяснение YAML](config/gitlab-ci.md).
+
 ## Быстрый старт
 
 ### Локальный Docker Desktop
@@ -83,13 +91,13 @@ MailGate/
 Из корня репозитория запустите вариант на официальных .NET-образах:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
-docker compose -f docker-compose.yml -f docker-compose.local.yml ps
+docker compose up -d --build
+docker compose ps
 ```
 
 Frontend: http://localhost:8091, API: http://localhost:8080, MailHog: http://localhost:8025. Локальный Keycloak: http://keycloak.localhost:8181, realm `mailgate`. Тестовый пользователь `mailgate-admin` и его пароль заданы в `config/keycloak/mailgate-local-realm.json`; он входит в `/MailGateAdmins`. Второй тестовый пользователь не имеет административного доступа. Учётные записи и пароли этого стенда предназначены только для разработки.
 
-Override задаёт локальную группу и authority для API/frontend; корпоративные Dockerfile и настройки не заменяются. Если порты заняты или `.env` содержит настройки другого окружения, проверьте их перед запуском. Worker применяет миграции при старте. Не удаляйте PostgreSQL и общий volume ключей при обычном обновлении.
+Единый Compose задаёт локальные значения по умолчанию. Для корпоративной сборки выберите API_DOCKERFILE и WORKER_DOCKERFILE в .env; для SMTP-файла задайте SMTP_CREDENTIALS_DIRECTORY. См. [config/compose.md](config/compose.md). Если порты заняты или `.env` содержит настройки другого окружения, проверьте их перед запуском. Worker применяет миграции при старте. Не удаляйте PostgreSQL и общий volume ключей при обычном обновлении.
 
 Полная инструкция ручного переноса шаблонов, миграций и конструкторов: [artifacts/mailgate-templates-full-instructions.md](artifacts/mailgate-templates-full-instructions.md).
 

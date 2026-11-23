@@ -30,12 +30,17 @@ public static class ServiceCollectionExtensions
 
         services.AddMemoryCache();
         var keysPath = configuration["DataProtection:KeysPath"];
-        if (string.IsNullOrWhiteSpace(keysPath))
-            throw new InvalidOperationException("DataProtection:KeysPath must point to a persistent shared directory.");
-        Directory.CreateDirectory(keysPath);
-        services.AddDataProtection()
-            .SetApplicationName("MailGate")
-            .PersistKeysToFileSystem(new DirectoryInfo(keysPath));
+        var protection = services.AddDataProtection().SetApplicationName("MailGate");
+        if (!string.IsNullOrWhiteSpace(keysPath))
+        {
+            Directory.CreateDirectory(keysPath);
+            protection.PersistKeysToFileSystem(new DirectoryInfo(keysPath));
+        }
+        else
+        {
+            // New SMTP modes do not encrypt anything. Never generate local fallback keys.
+            protection.DisableAutomaticKeyGeneration();
+        }
         services.AddScoped<SmtpConfigurationStore>();
 
         var rmqOptions = configuration.GetSection(MassTransitOptions.SectionName).Get<MassTransitOptions>()

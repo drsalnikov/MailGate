@@ -12,7 +12,7 @@
 
 **База диффов тематически восстановлена.** В проекте смешаны сегодняшняя система шаблонов и более ранние исправления. Комплект показывает только изменения для шаблонов относительно версии без этой функциональности, с приведением путей к текущей структуре. Это не история всех изменений Git и не гарантия автоматического применения к вашей закрытой ветке. Существующие файлы объединяйте по диффам, сохраняя свои настройки и исправления.
 
-Не переносите локальные `docker-compose.local.yml`, `src/Dockerfile.local`, `config/keycloak/mailgate-local-realm.json`. Корпоративные Keycloak, Nexus, SMTP, сертификаты, Data Protection/key ring, RabbitMQ и пароли остаются вашими. Для шаблонов новый Keycloak-клиент или новая роль не нужны: используется существующая политика `MailGateAdmin`.
+Для Kubernetes не переносите локальные настройки Docker/Keycloak автоматически; используйте свой chart и конфигурацию окружения. Корпоративные Keycloak, Nexus, SMTP, сертификаты, Data Protection/key ring, RabbitMQ и пароли остаются вашими. Для шаблонов новый Keycloak-клиент или новая роль не нужны: используется существующая политика `MailGateAdmin`.
 
 ## Шаг 1. Проверить терминал, пути и инструменты
 
@@ -299,15 +299,15 @@ docker compose logs --tail 100 api worker frontend
 
 По умолчанию cache оставляем включённым. `--no-cache` не требуется для обычного переноса исходников. `--force-recreate` сам по себе не собирает новые образы.
 
-Если frontend использует **уже настроенный** `docker-compose.npm.yml` для корпоративных build secrets, во всех командах сборки/запуска используйте те же Compose-файлы:
+Для корпоративного npm задайте NPMRC_FILE и NPM_TOKEN_FILE в .env; единый docker-compose.yml подключает их как build secrets:
 
 ```powershell
-docker compose -f docker-compose.yml -f docker-compose.npm.yml build api worker frontend
+docker compose build api worker frontend
 if ($LASTEXITCODE -ne 0) { throw 'Docker build failed' }
-docker compose -f docker-compose.yml -f docker-compose.npm.yml up -d --no-deps api worker frontend
+docker compose up -d --no-deps api worker frontend
 ```
 
-NPM_TOKEN должен быть передан существующим механизмом секретов. Добавлять локальный Compose override или менять корпоративные Docker base images ради шаблонов не нужно.
+В Compose токен передаётся файлом NPM_TOKEN_FILE. В существующем CI Docker build может использоваться NPM_TOKEN. Дополнительных Compose-файлов больше нет.
 
 Если pipeline публикует готовые образы, вместо локальных команд выполните стандартные стадии сборки/публикации/развёртывания **всех трёх** компонентов в вашем pipeline. Убедитесь, что Dockerfile копирует добавленные папки исходников, а образ Worker тоже обновился.
 

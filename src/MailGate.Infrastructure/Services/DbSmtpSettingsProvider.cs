@@ -13,21 +13,25 @@ namespace MailGate.Infrastructure.Services;
 public sealed class DbSmtpSettingsProvider(
     IServiceScopeFactory scopeFactory,
     IOptionsMonitor<SmtpOptions> appSettings,
-    IMemoryCache cache) : ISmtpSettingsProvider
+    IMemoryCache cache,
+    SmtpCredentialResolver credentials) : ISmtpSettingsProvider
 {
     private const string CacheKey = "MailGate.Smtp.EffectiveOptions";
 
     public async Task<SmtpOptions> GetEffectiveAsync(CancellationToken cancellationToken = default)
     {
-        if (cache.TryGetValue(CacheKey, out SmtpOptions? cached) && cached is not null)
-            return cached;
-
-        var merged = await LoadAsync(cancellationToken);
-        var seconds = appSettings.CurrentValue.SettingsCacheSeconds;
-        if (seconds <= 0)
-            throw new InvalidOperationException("Smtp:SettingsCacheSeconds must be greater than zero.");
-        cache.Set(CacheKey, merged, TimeSpan.FromSeconds(seconds));
-        return merged;
+        if (!cache.TryGetValue(CacheKey, out SmtpOptions? cached) || cached is null)
+        {
+            cached = await LoadAsync(cancellationToken);
+            var seconds = appSettings.CurrentValue.SettingsCacheSeconds;
+            if (seconds <= 0)
+                throw new InvalidOperationException("Smtp:SettingsCacheSeconds must be greater than zero.");
+            cache.Set(CacheKey, cached, TimeSpan.FromSeconds(seconds));
+        }
+        var effective = Clone(cached);
+        // Read sidecar credentials each time, independently of metadata cache/rotation.
+        await credentials.ApplyAsync(effective, cancellationToken);
+        return effective;
     }
 
     public void Invalidate() => cache.Remove(CacheKey);
@@ -47,6 +51,7 @@ public sealed class DbSmtpSettingsProvider(
 
         var merged = new SmtpOptions
         {
+            CredentialSource = entity.CredentialSource,
             Host = entity.Host,
             Port = entity.Port,
             UseSsl = entity.UseSsl,
@@ -74,6 +79,8 @@ public sealed class DbSmtpSettingsProvider(
 
     private static SmtpOptions Clone(SmtpOptions src) => new()
     {
+        CredentialSource = src.CredentialSource,
+        CredentialsFilePath = src.CredentialsFilePath,
         Host = src.Host,
         Port = src.Port,
         UseSsl = src.UseSsl,

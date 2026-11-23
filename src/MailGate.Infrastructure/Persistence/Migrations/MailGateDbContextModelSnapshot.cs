@@ -215,6 +215,9 @@ namespace MailGate.Infrastructure.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasDefaultValue(true);
 
+                    b.Property<int>("CredentialSource")
+                        .HasColumnType("integer");
+
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
 

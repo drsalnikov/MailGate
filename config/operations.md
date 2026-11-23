@@ -35,10 +35,10 @@ Design-time factory читает `ConnectionStrings__DefaultConnection`; пар�
 
 ## Корпоративный npm
 
-Обычный Compose использует публичный npm без обязательного токена. Для Nexus скопируйте `src/MailGate.Frontend/.npmrc.example` в `.npmrc`, замените только адрес и scope Nexus, оставив `${NPM_TOKEN}`. В игнорируемом корневом `.env` задайте `NPM_TOKEN` (одинарные кавычки сохраняют `$` буквально). Запускайте:
+Обычный Compose использует публичный npm без обязательного токена. Для Nexus скопируйте `src/MailGate.Frontend/.npmrc.example` в `.npmrc`, замените адрес и scope Nexus, оставив `${NPM_TOKEN}`. Сохраните токен в отдельном игнорируемом файле без BOM и перевода строки. В корневом `.env` задайте пути `NPMRC_FILE` и `NPM_TOKEN_FILE`, как описано в [compose.md](compose.md). Сам токен в YAML не записывается. Запускайте:
 
 ```powershell
-docker compose -f docker-compose.yml -f docker-compose.npm.yml up -d --build frontend
+docker compose up -d --build frontend
 ```
 
 В GitLab сохраните NPM_TOKEN как masked/hidden secret; protected переменная доступна только разрешённым protected pipeline. В существующем Docker build job передайте:
@@ -66,7 +66,7 @@ RABBITMQ_HOST, RABBITMQ_CONNECTION_PORT и RABBITMQ_VHOST задают подк�
 ## Локальный Docker Desktop без RED SOFT registry
 
 ```sh
-docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+docker compose up -d --build
 ```
 
 Override использует официальные образы .NET и отдельный тестовый Keycloak на `http://keycloak.localhost:8181`, не изменяя существующий Keycloak на 8180. Тестовый realm импортируется из `config/keycloak/mailgate-local-realm.json`, пользователь `mailgate-admin` включён в `/MailGateAdmins`. Пароль тестового пользователя указан в этом файле. Override не предназначен для корпоративного развёртывания; доверенные корпоративные УЦ из RED SOFT Dockerfile в него не устанавливаются.

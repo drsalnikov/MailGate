@@ -1,3 +1,5 @@
+using MailGate.Core.Enums;
+
 namespace MailGate.Contracts.Smtp;
 
 public enum SmtpConfigurationSource
@@ -18,7 +20,8 @@ public sealed record SmtpConfigurationDto(
     bool HasPassword,
     SmtpOAuth2Dto? OAuth2,
     SmtpConfigurationSource Source,
-    DateTimeOffset? UpdatedAt);
+    DateTimeOffset? UpdatedAt,
+    SmtpCredentialSource CredentialSource = SmtpCredentialSource.Legacy);
 
 public sealed record SmtpOAuth2Dto(
     string TenantId,
@@ -28,6 +31,7 @@ public sealed record SmtpOAuth2Dto(
 
 public sealed class UpdateSmtpConfigurationDto
 {
+    public SmtpCredentialSource CredentialSource { get; set; } = SmtpCredentialSource.Manual;
     public string Host { get; set; } = string.Empty;
     public int Port { get; set; } = 587;
     public bool UseSsl { get; set; }

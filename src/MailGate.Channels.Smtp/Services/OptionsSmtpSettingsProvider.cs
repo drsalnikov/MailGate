@@ -3,12 +3,24 @@ using Microsoft.Extensions.Options;
 
 namespace MailGate.Channels.Smtp.Services;
 
-/// <summary>
-/// Default provider that returns <see cref="SmtpOptions"/> from appsettings via <see cref="IOptionsMonitor{TOptions}"/>.
-/// Used when no database override mechanism is configured.
-/// </summary>
-public sealed class OptionsSmtpSettingsProvider(IOptionsMonitor<SmtpOptions> options) : ISmtpSettingsProvider
+public sealed class OptionsSmtpSettingsProvider(
+    IOptionsMonitor<SmtpOptions> options,
+    SmtpCredentialResolver credentials) : ISmtpSettingsProvider
 {
-    public Task<SmtpOptions> GetEffectiveAsync(CancellationToken cancellationToken = default)
-        => Task.FromResult(options.CurrentValue);
+    public async Task<SmtpOptions> GetEffectiveAsync(CancellationToken cancellationToken = default)
+    {
+        var source = options.CurrentValue;
+        var effective = new SmtpOptions
+        {
+            CredentialSource = source.CredentialSource,
+            CredentialsFilePath = source.CredentialsFilePath,
+            Host = source.Host, Port = source.Port,
+            UseSsl = source.UseSsl, UseTls = source.UseTls,
+            CheckCertificateRevocation = source.CheckCertificateRevocation,
+            FromAddress = source.FromAddress, FromName = source.FromName,
+            Username = source.Username, Password = source.Password, OAuth2 = source.OAuth2
+        };
+        await credentials.ApplyAsync(effective, cancellationToken);
+        return effective;
+    }
 }

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using MailGate.Core.Enums;
 using FluentValidation;
 using MailGate.Channels.Smtp.Options;
 using MailGate.Channels.Smtp.Services;
@@ -48,7 +49,7 @@ public static class SmtpAdminEndpoints
             return TypedResults.Ok(new SmtpConfigurationDto(
                 s.Host, s.Port, s.UseSsl, s.UseTls, s.CheckCertificateRevocation, s.FromAddress, s.FromName,
                 s.Username, !string.IsNullOrEmpty(s.Password),
-                oauth, SmtpConfigurationSource.AppSettings, null));
+                oauth, SmtpConfigurationSource.AppSettings, null, s.CredentialSource));
         }
 
         return TypedResults.Ok(ToDto(dbConfig, SmtpConfigurationSource.Database));
@@ -77,6 +78,7 @@ public static class SmtpAdminEndpoints
 
         var entity = new SmtpConfiguration
         {
+            CredentialSource = dto.CredentialSource,
             Host = dto.Host.Trim(),
             Port = dto.Port,
             UseSsl = dto.UseSsl,
@@ -109,9 +111,8 @@ public static class SmtpAdminEndpoints
 
     private static async Task<Ok<SmtpTestResultDto>> TestConnectionAsync(
         UpdateSmtpConfigurationDto dto,
-        SmtpConfigurationStore store,
         IValidator<UpdateSmtpConfigurationDto> validator,
-        IOptionsMonitor<SmtpOptions> appSettings,
+        SmtpCredentialResolver credentials,
         CancellationToken cancellationToken)
     {
         var validation = await validator.ValidateAsync(dto, cancellationToken);
@@ -126,21 +127,8 @@ public static class SmtpAdminEndpoints
         var sw = Stopwatch.StartNew();
         try
         {
-            var effective = BuildEffectiveOptions(dto, appSettings.CurrentValue);
-            var needsSavedSecret = dto.OAuth2 is null
-                ? string.IsNullOrEmpty(dto.Password)
-                : string.IsNullOrEmpty(dto.OAuth2.ClientSecret);
-            if (needsSavedSecret)
-            {
-                var saved = await store.GetMetadataAsync(cancellationToken);
-                if (saved is not null)
-                {
-                    if (dto.OAuth2 is null)
-                        effective.Password = store.DecryptPassword(saved) ?? effective.Password;
-                    else if (effective.OAuth2 is not null)
-                        effective.OAuth2.ClientSecret = store.DecryptOAuth2ClientSecret(saved) ?? effective.OAuth2.ClientSecret;
-                }
-            }
+            var effective = BuildEffectiveOptions(dto);
+            await credentials.ApplyAsync(effective, cancellationToken);
             if (effective.OAuth2 is null && !string.IsNullOrWhiteSpace(effective.Username) && string.IsNullOrEmpty(effective.Password))
                 throw new InvalidOperationException("Указан SMTP-логин, но пароль отсутствует.");
             using var client = new SmtpClient();
@@ -153,17 +141,8 @@ public static class SmtpAdminEndpoints
 
             await client.ConnectAsync(effective.Host, effective.Port, secureSocketOptions, cancellationToken);
 
-            if (effective.OAuth2 is not null)
-            {
-                var token = await new OAuth2TokenProvider(effective).GetAccessTokenAsync(cancellationToken);
-                await client.AuthenticateAsync(
-                    new SaslMechanismOAuth2(effective.OAuth2.SmtpUserPrincipalName, token),
-                    cancellationToken);
-            }
-            else if (!string.IsNullOrEmpty(effective.Username) && !string.IsNullOrEmpty(effective.Password))
-            {
+            if (!string.IsNullOrEmpty(effective.Username) && !string.IsNullOrEmpty(effective.Password))
                 await client.AuthenticateAsync(effective.Username, effective.Password, cancellationToken);
-            }
 
             await client.DisconnectAsync(quit: true, cancellationToken);
             sw.Stop();
@@ -176,24 +155,16 @@ public static class SmtpAdminEndpoints
         }
     }
 
-    private static SmtpOptions BuildEffectiveOptions(UpdateSmtpConfigurationDto dto, SmtpOptions fallback) => new()
+    private static SmtpOptions BuildEffectiveOptions(UpdateSmtpConfigurationDto dto) => new()
     {
+        CredentialSource = dto.CredentialSource,
         Host = dto.Host,
         Port = dto.Port,
         UseSsl = dto.UseSsl,
         UseTls = dto.UseTls,
         CheckCertificateRevocation = dto.CheckCertificateRevocation,
         FromAddress = dto.FromAddress,
-        FromName = dto.FromName,
-        Username = dto.Username ?? fallback.Username,
-        Password = dto.Password ?? fallback.Password,
-        OAuth2 = dto.OAuth2 is null ? null : new OAuth2Options
-        {
-            TenantId = dto.OAuth2.TenantId,
-            ClientId = dto.OAuth2.ClientId,
-            ClientSecret = dto.OAuth2.ClientSecret ?? fallback.OAuth2?.ClientSecret ?? string.Empty,
-            SmtpUserPrincipalName = dto.OAuth2.SmtpUserPrincipalName
-        }
+        FromName = dto.FromName
     };
 
     private static SmtpConfigurationDto ToDto(SmtpConfiguration e, SmtpConfigurationSource source)
@@ -207,6 +178,6 @@ public static class SmtpAdminEndpoints
         return new SmtpConfigurationDto(
             e.Host, e.Port, e.UseSsl, e.UseTls, e.CheckCertificateRevocation, e.FromAddress, e.FromName,
             e.Username, !string.IsNullOrEmpty(e.EncryptedPassword),
-            oauth, source, e.UpdatedAt);
+            oauth, source, e.UpdatedAt, e.CredentialSource);
     }
 }

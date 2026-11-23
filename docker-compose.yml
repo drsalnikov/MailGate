@@ -41,36 +41,39 @@ services:
       - "${MAILHOG_SMTP_PORT:-1025}:1025"
       - "${MAILHOG_UI_PORT:-8025}:8025"
 
-  keycloak:
+  keycloak-local:
     image: quay.io/keycloak/keycloak:26.2
-    container_name: mailgate-keycloak
-    command:
-      - start-dev
-      - --import-realm
+    container_name: mailgate-keycloak-local
+    command: ["start-dev", "--import-realm"]
     ports:
-      - "${KEYCLOAK_PORT:-8180}:8080"
+      - "${KEYCLOAK_PORT:-8181}:8080"
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:-admin}
-      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
-      # Внешний URL Keycloak (issuer токенов). За nginx укажите https://keycloak.<домен>
-      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-http://keycloak.localhost:8180}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-local-development-only}
+      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-http://keycloak.localhost:8181}
       KC_HOSTNAME_STRICT: "false"
       KC_HTTP_ENABLED: "true"
-      # Доверять заголовкам X-Forwarded-* от реверс-прокси
-      KC_PROXY_HEADERS: xforwarded
     volumes:
-      - ./config/keycloak/mailgate-realm.json:/opt/keycloak/data/import/mailgate-realm.json:ro
+      - keycloak_data:/opt/keycloak/data
+      - ./config/keycloak/mailgate-local-realm.json:/opt/keycloak/data/import/mailgate-realm.json:ro
 
   api:
+    image: ${MAILGATE_API_IMAGE:-mailgate-api:local}
     build:
       context: .
-      dockerfile: src/MailGate.Api/Dockerfile
+      dockerfile: ${API_DOCKERFILE:-src/Dockerfile.local}
+      args:
+        PROJECT: Api
+      secrets:
+        - nuget_config
     container_name: mailgate-api
     ports:
       - "${API_HTTP_PORT:-8080}:8080"
       - "${API_HTTPS_PORT:-8443}:8443"
     environment:
       DataProtection__KeysPath: /var/mailgate/keys
+      Smtp__CredentialsFilePath: /var/mailgate/smtp-credentials/account.json
+      Smtp__CredentialSource: ${SMTP_CREDENTIAL_SOURCE:-Legacy}
       Smtp__SettingsCacheSeconds: ${SMTP_SETTINGS_CACHE_SECONDS:-30}
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
       ASPNETCORE_HTTP_PORTS: "8080"
@@ -85,11 +88,11 @@ services:
       MassTransit__VirtualHost: ${RABBITMQ_VHOST:-/}
       MassTransit__Username: ${RABBITMQ_USER:-mailgate}
       MassTransit__Password: ${RABBITMQ_PASSWORD:-mailgate}
-      Authentication__Keycloak__Authority: ${KEYCLOAK_AUTHORITY:-http://keycloak.localhost:8180/realms/mailgate}
+      Authentication__Keycloak__Authority: ${KEYCLOAK_AUTHORITY:-http://keycloak.localhost:8181/realms/mailgate}
       Authentication__Keycloak__Audience: ${KEYCLOAK_AUDIENCE:-mailgate-api}
       Authentication__Keycloak__ClientId: ${KEYCLOAK_CLIENT_ID:-mailgate-admin}
       Authentication__Keycloak__SwaggerClientId: ${KEYCLOAK_CLIENT_ID:-mailgate-admin}
-      Authentication__Keycloak__AdminGroup: ${KEYCLOAK_ADMIN_GROUP:-}
+      Authentication__Keycloak__AdminGroup: ${KEYCLOAK_ADMIN_GROUP-/MailGateAdmins}
       Authentication__Keycloak__RequireHttpsMetadata: ${KEYCLOAK_REQUIRE_HTTPS_METADATA:-false}
       Cors__AllowedOrigins__0: ${CORS_ORIGIN_0:-http://localhost:8091}
       Cors__AllowedOrigins__1: ${CORS_ORIGIN_1:-http://localhost:5173}
@@ -104,41 +107,60 @@ services:
     volumes:
       - ~/.aspnet/https:/https:ro
       - data_protection_keys:/var/mailgate/keys
+      - type: bind
+        source: ${SMTP_CREDENTIALS_DIRECTORY:-./secrets/smtp}
+        target: /var/mailgate/smtp-credentials
+        read_only: true
     depends_on:
       rabbitmq:
         condition: service_healthy
       postgres:
         condition: service_healthy
-      keycloak:
+      keycloak-local:
         condition: service_started
       mailhog:
         condition: service_started
 
   frontend:
+    image: ${MAILGATE_FRONTEND_IMAGE:-mailgate-frontend:local}
     build:
       context: src/MailGate.Frontend
       dockerfile: Dockerfile
+      secrets:
+        - npmrc
+        - npm_token
     container_name: mailgate-frontend
     ports:
       - "${FRONTEND_PORT:-8091}:80"
     environment:
       API_BASE_URL: ${API_BASE_URL:-http://localhost:8080}
-      KEYCLOAK_AUTHORITY: ${KEYCLOAK_AUTHORITY:-http://keycloak.localhost:8180/realms/mailgate}
+      KEYCLOAK_AUTHORITY: ${KEYCLOAK_AUTHORITY:-http://keycloak.localhost:8181/realms/mailgate}
       KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-mailgate-admin}
-      KEYCLOAK_ADMIN_GROUP: ${KEYCLOAK_ADMIN_GROUP:-}
+      KEYCLOAK_ADMIN_GROUP: ${KEYCLOAK_ADMIN_GROUP-/MailGateAdmins}
     depends_on:
       api:
         condition: service_started
 
   worker:
+    image: ${MAILGATE_WORKER_IMAGE:-mailgate-worker:local}
     build:
       context: .
-      dockerfile: src/MailGate.Worker/Dockerfile
+      dockerfile: ${WORKER_DOCKERFILE:-src/Dockerfile.local}
+      args:
+        PROJECT: Worker
+      secrets:
+        - nuget_config
     container_name: mailgate-worker
     volumes:
       - data_protection_keys:/var/mailgate/keys
+      - type: bind
+        source: ${SMTP_CREDENTIALS_DIRECTORY:-./secrets/smtp}
+        target: /var/mailgate/smtp-credentials
+        read_only: true
     environment:
       DataProtection__KeysPath: /var/mailgate/keys
+      Smtp__CredentialsFilePath: /var/mailgate/smtp-credentials/account.json
+      Smtp__CredentialSource: ${SMTP_CREDENTIAL_SOURCE:-Legacy}
       Smtp__SettingsCacheSeconds: ${SMTP_SETTINGS_CACHE_SECONDS:-30}
       DOTNET_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
       ConnectionStrings__DefaultConnection: "Host=postgres;Database=${POSTGRES_DB:-mailgate};Username=${POSTGRES_USER:-mailgate};Password=${POSTGRES_PASSWORD:-mailgate}"
@@ -165,3 +187,14 @@ volumes:
   rabbitmq_data:
   postgres_data:
   data_protection_keys:
+  keycloak_data:
+
+# Empty/public defaults let a clean checkout build without corporate credentials.
+# Set FILE paths in .env for private registries; never COPY tokens into images.
+secrets:
+  nuget_config:
+    file: ${NUGET_CONFIG_FILE:-./src/NuGet.Config}
+  npmrc:
+    file: ${NPMRC_FILE:-./config/npmrc.public}
+  npm_token:
+    file: ${NPM_TOKEN_FILE:-./config/build-secret.empty}

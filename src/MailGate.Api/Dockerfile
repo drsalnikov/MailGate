@@ -23,7 +23,12 @@ COPY ["src/MailGate.Core/MailGate.Core.csproj", "MailGate.Core/"]
 COPY ["src/MailGate.Channels.Smtp/MailGate.Channels.Smtp.csproj", "MailGate.Channels.Smtp/"]
 COPY ["src/MailGate.Infrastructure/MailGate.Infrastructure.csproj", "MailGate.Infrastructure/"]
 
-RUN dotnet restore "MailGate.Api/MailGate.Api.csproj"
+RUN --mount=type=secret,id=nuget_config \
+    if [ -f /run/secrets/nuget_config ]; then \
+      dotnet restore "MailGate.Api/MailGate.Api.csproj" --configfile /run/secrets/nuget_config; \
+    else \
+      dotnet restore "MailGate.Api/MailGate.Api.csproj"; \
+    fi
 
 COPY src/ .
 RUN dotnet publish "MailGate.Api/MailGate.Api.csproj" \

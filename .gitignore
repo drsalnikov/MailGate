@@ -66,3 +66,12 @@ coverage/
 !.env.example
 *.pfx
 *.key
+
+# GitLab deployment state and non-secret pipeline image manifest
+.mailgate-ci/
+images.env
+__pycache__/
+
+# SMTP account files rendered by a sidecar or created locally
+account.json
+secrets/

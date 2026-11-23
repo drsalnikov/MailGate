@@ -1,8 +1,13 @@
+using MailGate.Core.Enums;
+
 namespace MailGate.Channels.Smtp.Options;
 
 public sealed class SmtpOptions
 {
     public const string SectionName = "Smtp";
+
+    public SmtpCredentialSource CredentialSource { get; set; } = SmtpCredentialSource.Legacy;
+    public string CredentialsFilePath { get; set; } = "/var/mailgate/smtp-credentials/account.json";
 
     public int SettingsCacheSeconds { get; set; } = 30;
 

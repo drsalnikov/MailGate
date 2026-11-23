@@ -1,0 +1,70 @@
+# Linux Shell Runner tagged "mailgate", with Docker/BuildKit, bash and OpenSSH.
+# Setup: config/gitlab-ci.md. No production deploy job is defined here.
+workflow:
+  auto_cancel:
+    on_new_commit: interruptible
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+    - when: never
+
+stages:
+  - test
+  - build
+  - deploy
+
+default:
+  tags:
+    - mailgate
+  interruptible: true
+
+variables:
+  DOCKER_BUILDKIT: "1"
+  DOTNET_SDK_IMAGE: "mcr.microsoft.com/dotnet/sdk:10.0"
+  DEV_SSH_PORT: "22"
+  DEV_API_HEALTH_URL: "http://127.0.0.1:8080/healthz/ready"
+  DEV_FRONTEND_HEALTH_URL: "http://127.0.0.1:8091/"
+
+template_checks:
+  stage: test
+  script:
+    - bash scripts/ci/check-templates.sh
+
+smtp_credential_checks:
+  stage: test
+  script:
+    - bash scripts/ci/check-smtp-credentials.sh
+
+pipeline_script_checks:
+  stage: test
+  script:
+    - bash -n scripts/ci/check-templates.sh scripts/ci/build-images.sh scripts/ci/deploy-dev.sh scripts/ci/deploy-dev-server.sh
+    - python3 -m unittest discover -s tests/ci -v
+
+build_images:
+  stage: build
+  script:
+    - bash scripts/ci/build-images.sh
+  artifacts:
+    expire_in: 7 days
+    paths:
+      - images.env
+    reports:
+      dotenv: images.env
+
+deploy_dev:
+  stage: deploy
+  # This optional job is for Compose/SSH only. Kubernetes deployment must use
+  # your cluster's Helm/Argo CD/GitLab Agent workflow instead.
+  rules:
+    - if: '$MAILGATE_DEPLOY_TARGET == "compose-ssh"'
+    - when: never
+  interruptible: false
+  resource_group: mailgate-dev
+  environment:
+    name: development
+    deployment_tier: development
+  needs:
+    - job: build_images
+      artifacts: true
+  script:
+    - bash scripts/ci/deploy-dev.sh

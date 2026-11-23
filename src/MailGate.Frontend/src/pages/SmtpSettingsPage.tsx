@@ -5,7 +5,7 @@ import {
   Button,
   Card,
   Checkbox,
-  Collapse,
+  Radio,
   Descriptions,
   Form,
   Input,
@@ -19,7 +19,7 @@ import {
 import { ApiOutlined, DeleteOutlined, SaveOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { smtpApi } from '../api/endpoints';
-import type { SmtpTestResultDto, UpdateSmtpConfigurationDto } from '../api/types';
+import type { SmtpCredentialSource, SmtpTestResultDto, UpdateSmtpConfigurationDto } from '../api/types';
 
 interface FormValues {
   host: string;
@@ -29,13 +29,7 @@ interface FormValues {
   checkCertificateRevocation: boolean;
   fromAddress: string;
   fromName: string;
-  username?: string;
-  password?: string;
-  oauthEnabled: boolean;
-  oauthTenantId?: string;
-  oauthClientId?: string;
-  oauthClientSecret?: string;
-  oauthUpn?: string;
+  credentialSource: SmtpCredentialSource;
 }
 
 function toDto(values: FormValues): UpdateSmtpConfigurationDto {
@@ -47,16 +41,10 @@ function toDto(values: FormValues): UpdateSmtpConfigurationDto {
     checkCertificateRevocation: values.checkCertificateRevocation,
     fromAddress: values.fromAddress.trim(),
     fromName: values.fromName.trim(),
-    username: values.username?.trim() || null,
-    password: values.password || null,
-    oAuth2: values.oauthEnabled
-      ? {
-          tenantId: values.oauthTenantId?.trim() ?? '',
-          clientId: values.oauthClientId?.trim() ?? '',
-          clientSecret: values.oauthClientSecret || null,
-          smtpUserPrincipalName: values.oauthUpn?.trim() ?? '',
-        }
-      : null,
+    credentialSource: values.credentialSource,
+    username: null,
+    password: null,
+    oAuth2: null,
   };
 }
 
@@ -83,11 +71,7 @@ export function SmtpSettingsPage() {
         checkCertificateRevocation: effective.checkCertificateRevocation ?? true,
         fromAddress: effective.fromAddress,
         fromName: effective.fromName,
-        username: effective.username ?? undefined,
-        oauthEnabled: effective.oAuth2 !== null,
-        oauthTenantId: effective.oAuth2?.tenantId,
-        oauthClientId: effective.oAuth2?.clientId,
-        oauthUpn: effective.oAuth2?.smtpUserPrincipalName,
+        credentialSource: effective.credentialSource === 'Legacy' && !effective.username && !effective.hasPassword && !effective.oAuth2 ? 'Manual' : effective.credentialSource,
       });
     }
   }, [effective, form]);
@@ -122,7 +106,8 @@ export function SmtpSettingsPage() {
     onError: (error: Error) => message.error(error.message),
   });
 
-  const oauthEnabled = Form.useWatch('oauthEnabled', form);
+  const credentialSource = Form.useWatch('credentialSource', form);
+  const pending = saveMutation.isPending || testMutation.isPending || deleteMutation.isPending;
 
   if (effectiveQuery.isLoading) {
     return <Spin size="large" style={{ display: 'block', margin: '80px auto' }} />;
@@ -132,6 +117,7 @@ export function SmtpSettingsPage() {
     <div style={{ maxWidth: 760 }}>
       <Typography.Title level={3}>Настройки SMTP</Typography.Title>
 
+      {effectiveQuery.isError && <Alert type="error" title={effectiveQuery.error.message} style={{ marginBottom: 16 }} />}
       {effective && (
         <Card size="small" style={{ marginBottom: 16 }}>
           <Descriptions column={2} size="small" title="Действующая конфигурация">
@@ -152,8 +138,25 @@ export function SmtpSettingsPage() {
           form={form}
           layout="vertical"
           onFinish={(values) => saveMutation.mutate(values)}
-          initialValues={{ port: 587, useTls: true, useSsl: false, checkCertificateRevocation: true, oauthEnabled: false }}
+          initialValues={{ port: 587, useTls: true, useSsl: false, checkCertificateRevocation: true, credentialSource: 'Manual' }}
+          disabled={pending}
+          onValuesChange={() => setTestResult(null)}
         >
+          <Form.Item name="credentialSource" label="Источник SMTP-настроек" rules={[{ required: true }]}>
+            <Radio.Group options={[
+              { value: 'Manual', label: 'Вручную (тестовый SMTP без авторизации)' },
+              { value: 'Sidecar', label: 'Существующая почтовая учётная запись' },
+            ]} />
+          </Form.Item>
+          <Alert style={{ marginBottom: 16 }} type={credentialSource === 'Legacy' ? 'warning' : 'info'} title={
+            credentialSource === 'Sidecar'
+              ? 'Логин и пароль берутся из файла, предоставленного sidecar. Они не сохраняются в БД. Укажите параметры сервера ниже и включите STARTTLS или SSL.'
+              : credentialSource === 'Legacy'
+                ? 'Прежняя конфигурация продолжает работать. Выберите новый режим, чтобы изменить настройки. При сохранении прежние логин, пароль и OAuth2 будут удалены из этой записи.'
+                : 'Режим для MailHog и других тестовых серверов без аутентификации. Ввод логина, пароля и OAuth2 отключён.'
+          } />
+          {effective?.source === 'Database' && effective.credentialSource === 'Legacy' && credentialSource !== 'Legacy' &&
+            <Alert type="warning" style={{ marginBottom: 16 }} title="Сохранение нового режима очистит старые учётные данные из БД. Проверьте новый режим перед сохранением." />}
           <Space.Compact block>
             <Form.Item
               name="host"
@@ -205,71 +208,6 @@ export function SmtpSettingsPage() {
             <Input placeholder="MailGate" />
           </Form.Item>
 
-          <Form.Item name="username" label="Логин">
-            <Input autoComplete="off" />
-          </Form.Item>
-
-          <Form.Item
-            name="password"
-            label="Пароль"
-            tooltip={effective?.hasPassword ? 'Пароль уже сохранён. Оставьте пустым, чтобы не менять.' : undefined}
-          >
-            <Input.Password autoComplete="new-password" placeholder={effective?.hasPassword ? '••••••••' : ''} />
-          </Form.Item>
-
-          <Form.Item name="oauthEnabled" valuePropName="checked">
-            <Checkbox>OAuth2 (Microsoft Exchange Online)</Checkbox>
-          </Form.Item>
-
-          {oauthEnabled && (
-            <Collapse
-              defaultActiveKey={['oauth']}
-              items={[
-                {
-                  key: 'oauth',
-                  label: 'Параметры OAuth2',
-                  children: (
-                    <>
-                      <Form.Item
-                        name="oauthTenantId"
-                        label="Tenant ID"
-                        rules={[{ required: true, message: 'Введите Tenant ID' }]}
-                      >
-                        <Input />
-                      </Form.Item>
-                      <Form.Item
-                        name="oauthClientId"
-                        label="Client ID"
-                        rules={[{ required: true, message: 'Введите Client ID' }]}
-                      >
-                        <Input />
-                      </Form.Item>
-                      <Form.Item
-                        name="oauthClientSecret"
-                        label="Client Secret"
-                        tooltip={
-                          effective?.oAuth2?.hasClientSecret
-                            ? 'Секрет уже сохранён. Оставьте пустым, чтобы не менять.'
-                            : undefined
-                        }
-                      >
-                        <Input.Password autoComplete="new-password" />
-                      </Form.Item>
-                      <Form.Item
-                        name="oauthUpn"
-                        label="SMTP User Principal Name"
-                        rules={[{ required: true, message: 'Введите UPN' }]}
-                      >
-                        <Input placeholder="mailer@tenant.onmicrosoft.com" />
-                      </Form.Item>
-                    </>
-                  ),
-                },
-              ]}
-              style={{ marginBottom: 16 }}
-            />
-          )}
-
           {testResult && (
             <Alert
               style={{ marginBottom: 16 }}
@@ -285,10 +223,10 @@ export function SmtpSettingsPage() {
           )}
 
           <Space wrap>
-            <Button type="primary" htmlType="submit" icon={<SaveOutlined />} loading={saveMutation.isPending}>
+            <Button type="primary" htmlType="submit" icon={<SaveOutlined />} loading={saveMutation.isPending} disabled={pending || credentialSource === 'Legacy'}>
               Сохранить override
             </Button>
-            <Button icon={<ApiOutlined />} loading={testMutation.isPending} onClick={() => testMutation.mutate()}>
+            <Button icon={<ApiOutlined />} loading={testMutation.isPending} disabled={pending || credentialSource === 'Legacy'} onClick={() => testMutation.mutate()}>
               Проверить подключение
             </Button>
             {effective?.source === 'Database' && (

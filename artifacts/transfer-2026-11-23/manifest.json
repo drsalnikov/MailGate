@@ -1,0 +1,23 @@
+{
+  "date": "2026-11-23",
+  "branch": "develop",
+  "guide": "config/closed-network-transfer.md",
+  "excluded": [
+    "artifacts/**",
+    "config/closed-network-transfer.md"
+  ],
+  "packages": {
+    "incremental": {
+      "base": "e775c18da40a6c92000e1a66b30ff4bf04726d9f",
+      "patch_sha256": "aa46531264685df318d573e8d08b4f8fa8d011229bac16066e50a762d014d868",
+      "file_changes": 47,
+      "verified_against_baseline": true
+    },
+    "full": {
+      "base": "3536209b1c154c7b449c6348d1cc0d71fa9ff9f6",
+      "patch_sha256": "c0698187c3ec299f22f30060af99dc692bf77d081e5a400be16c0cfaf4d47304",
+      "file_changes": 117,
+      "verified_against_baseline": true
+    }
+  }
+}

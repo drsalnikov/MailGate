@@ -14,6 +14,7 @@ public static class ServiceCollectionExtensions
         IConfiguration configuration)
     {
         services.Configure<SmtpOptions>(configuration.GetSection(SmtpOptions.SectionName));
+        services.TryAddSingleton<SmtpCredentialResolver>();
         services.TryAddSingleton<ISmtpSettingsProvider, OptionsSmtpSettingsProvider>();
         services.AddSingleton<INotificationChannel, SmtpChannel>();
         return services;

@@ -1,3 +1,5 @@
+using MailGate.Core.Enums;
+
 namespace MailGate.Core.Entities;
 
 /// <summary>
@@ -7,6 +9,7 @@ namespace MailGate.Core.Entities;
 /// </summary>
 public sealed class SmtpConfiguration
 {
+    public SmtpCredentialSource CredentialSource { get; set; } = SmtpCredentialSource.Legacy;
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Host { get; set; } = string.Empty;
     public int Port { get; set; } = 587;

@@ -13,4 +13,5 @@
     <Project Path="MailGate.Contracts/MailGate.Contracts.csproj" />
   </Folder>
   <Project Path="../tests/MailGate.TemplateChecks/MailGate.TemplateChecks.csproj" />
+  <Project Path="../tests/MailGate.SmtpCredentialChecks/MailGate.SmtpCredentialChecks.csproj" />
 </Solution>

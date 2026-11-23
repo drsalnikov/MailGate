@@ -143,7 +143,10 @@ export interface SmtpOAuth2Dto {
   smtpUserPrincipalName: string;
 }
 
+export type SmtpCredentialSource = 'Manual' | 'Sidecar' | 'Legacy';
+
 export interface SmtpConfigurationDto {
+  credentialSource: SmtpCredentialSource;
   host: string;
   port: number;
   useSsl: boolean;
@@ -166,6 +169,7 @@ export interface UpdateSmtpOAuth2Dto {
 }
 
 export interface UpdateSmtpConfigurationDto {
+  credentialSource: SmtpCredentialSource;
   host: string;
   port: number;
   useSsl: boolean;
